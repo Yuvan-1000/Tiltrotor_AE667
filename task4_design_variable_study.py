@@ -1,30 +1,40 @@
 """
 task4_design_variable_study.py
 ================================================================================
-Milestone-1 Task 4 / Report Sections 4.1-4.3: "Rotor Design-Variable Study".
+Milestone-1 Task 4 / Report Sections 4.1-4.3: Rotor Design-Variable Study.
 
-Uses the VALIDATED baseline rotor (Knight & Hefner geometry/airfoil, same as
+Uses the validated baseline rotor (Knight & Hefner geometry/airfoil, same as
 task3_validation.py) and independently sweeps:
   4.1  solidity / blade number   (>= 4 values)
   4.2  taper ratio               (>= 4 values)
   4.3  linear twist              (>= 4 values)
-holding every other parameter fixed at the baseline, at a single representative
-hover operating point (fixed RPM and collective -- edit OP_COLLECTIVE_DEG /
-OP_RPM below if your team prefers a fixed-thrust comparison instead of a
-fixed-collective one; both are defensible, just say which you used).
+holding every other parameter fixed at a single representative hover
+operating point (OP_RPM, OP_COLLECTIVE_DEG below).
 
-For 4.1, solidity is varied two ways so you can discuss BOTH knobs the
-handout asks about:
-  (a) via blade number B in {2,3,4,5} (chord held fixed -> sigma changes in
-      discrete steps, and this ALSO lets you sanity-check against Knight &
-      Hefner Tables I-IV if you digitize them, since B in {2,3,4,5} is
-      exactly their four test rotors)
-  (b) via chord (blade number held fixed at 2) over a continuous solidity
-      range, so you have >=4 *continuous* points as the handout asks for.
+NOTE ON RPM: with the linear/quadratic airfoil model (no Reynolds or Mach
+dependence), CT and CQ are RPM-independent in hover -- only the DIMENSIONAL
+T, Q, P and the reported tip Mach number change with RPM. OP_RPM here just
+sets a physically reasonable tip speed for reporting dimensional thrust/
+power and M_tip; it does not bias the trends being studied.
+
+4.1 solidity is varied two ways:
+  (a) via blade number B in {2,3,4,5} (chord fixed -> discrete sigma steps;
+      also matches Knight & Hefner's four test rotors if you later digitize
+      their B=3,4,5 tables too)
+  (b) via chord (B fixed at 2) over a continuous range, for the >=4
+      continuous points the handout asks for
+
+4.3 twist: each twist distribution is TRIMMED (root collective adjusted via
+root-find) to reproduce the SAME thrust as the untwisted baseline before
+comparing power/FM. Comparing twist cases at a FIXED collective instead
+would mostly just change tip angle-of-attack and swamp the actual physical
+effect of twist (a more uniform inflow -> lower induced power for the same
+thrust) -- trimming to constant thrust is the standard way to isolate it.
 ================================================================================
 """
 
 import os
+import warnings
 import numpy as np
 import matplotlib
 matplotlib.use("Agg")
@@ -39,31 +49,30 @@ os.makedirs(FIG_DIR, exist_ok=True)
 os.makedirs(OUT_DIR, exist_ok=True)
 
 # ================================================================================
-# Baseline (same rotor/airfoil/operating point as Task 3 validation)
+# Baseline (same rotor/airfoil as Task 3 validation)
 # ================================================================================
 R_BASE = 0.762
 R_ROOT_BASE = 0.125
 CHORD_BASE = 0.0508
 B_BASE = 2
-AIRFOIL = LinearAirfoil(a0=5.75, cd_min=0.0113, eps=1.25,
-                         alpha_stall_pos=np.radians(14.0),
-                         alpha_stall_neg=np.radians(-14.0))
+AIRFOIL = LinearAirfoil(a0=5.75, cd_min=0.0113, eps=1.25, alpha_stall=np.radians(14.0))
 
 OP_RPM = 960.0
-OP_COLLECTIVE_DEG = 10.0     # representative hover point, above the small-
-                              # theta noise seen in Task 3, below stall
+OP_COLLECTIVE_DEG = 10.0     # representative point: above the low-theta noise
+                              # seen in Task 3, below stall
 BASE_FLIGHT = FlightCondition.from_rpm(OP_RPM, collective_deg=OP_COLLECTIVE_DEG,
                                         altitude=0.0, dT_isa=0.0)
 
 
 def run_point(geom, flight=BASE_FLIGHT, airfoil=AIRFOIL):
     solver = BEMTSolver(geom, airfoil, use_tip_loss=True, use_root_loss=False)
-    return solver.solve(flight, verbose=False)
+    return solver.solve(flight)
 
 
 def save_and_plot(x, T, P, eff, xlabel, title_prefix, fname_prefix, extra_label=""):
     fig, axes = plt.subplots(1, 3, figsize=(14, 4.2))
     axes[0].plot(x, T, "o-", color="tab:blue")
+    axes[0].ticklabel_format(useOffset=False, style="plain", axis="y")
     axes[0].set_xlabel(xlabel); axes[0].set_ylabel("Thrust, T [N]")
     axes[0].set_title(f"{title_prefix}: Thrust"); axes[0].grid(alpha=0.3)
 
@@ -75,7 +84,7 @@ def save_and_plot(x, T, P, eff, xlabel, title_prefix, fname_prefix, extra_label=
     axes[2].set_xlabel(xlabel); axes[2].set_ylabel("Figure of Merit, FM")
     axes[2].set_title(f"{title_prefix}: Efficiency (FM)"); axes[2].grid(alpha=0.3)
 
-    fig.suptitle(f"Task 4 -- {title_prefix} sweep{extra_label} "
+    fig.suptitle(f"Task 4 - {title_prefix} sweep{extra_label} "
                  f"(collective={OP_COLLECTIVE_DEG:.0f} deg, {OP_RPM:.0f} RPM, sea level)")
     fig.tight_layout()
     fig.savefig(os.path.join(FIG_DIR, f"{fname_prefix}.png"), dpi=160)
@@ -83,15 +92,14 @@ def save_and_plot(x, T, P, eff, xlabel, title_prefix, fname_prefix, extra_label=
 
 
 # ================================================================================
-# 4.1(a) -- blade-number variation (discrete, matches Knight & Hefner B=2..5)
+# 4.1(a) - blade-number variation (discrete, matches Knight & Hefner B=2..5)
 # ================================================================================
 def study_blade_number():
     B_values = [2, 3, 4, 5]
     rows = []
     for B in B_values:
         geom = RotorGeometry(R=R_BASE, r_root=R_ROOT_BASE, B=B,
-                              chord_root=CHORD_BASE, taper_ratio=1.0,
-                              n_stations=80)
+                              chord_root=CHORD_BASE, taper_ratio=1.0, n_stations=80)
         res = run_point(geom)
         rows.append((B, geom.solidity(), res["T"], res["P"], res["FM"],
                      res["stall_fraction"], res["M_tip"]))
@@ -115,7 +123,7 @@ def study_blade_number():
 
 
 # ================================================================================
-# 4.1(b) -- continuous solidity variation via chord, B fixed = 2
+# 4.1(b) - continuous solidity variation via chord, B fixed = 2
 # ================================================================================
 def study_solidity_continuous():
     chord_values = np.linspace(0.03, 0.09, 7)   # -> sigma ~ 0.025 to 0.075
@@ -143,22 +151,17 @@ def study_solidity_continuous():
 
 
 # ================================================================================
-# 4.2 -- taper ratio variation (tip chord / root chord), B=2, sigma held
-#         approximately constant is NOT required by the handout -- here we
-#         hold chord_root fixed and vary taper_ratio directly, which is the
-#         simplest, most defensible interpretation ("vary taper ratio,
-#         everything else fixed").
+# 4.2 - taper ratio variation (tip chord / root chord), B=2, chord_root fixed
 # ================================================================================
 def study_taper():
     taper_values = [0.4, 0.6, 0.8, 0.9, 1.0]
     rows = []
     for tr in taper_values:
         geom = RotorGeometry(R=R_BASE, r_root=R_ROOT_BASE, B=B_BASE,
-                              chord_root=CHORD_BASE, taper_ratio=tr,
-                              n_stations=80)
+                              chord_root=CHORD_BASE, taper_ratio=tr, n_stations=80)
         res = run_point(geom)
         rows.append((tr, geom.solidity(), res["T"], res["P"], res["FM"],
-                      res["stall_fraction"]))
+                     res["stall_fraction"]))
         print(f"taper={tr:.2f}  sigma={geom.solidity():.4f}  T={res['T']:.1f} N  "
               f"P={res['P']/1000:.2f} kW  FM={res['FM']:.3f}")
 
@@ -177,24 +180,61 @@ def study_taper():
 
 
 # ================================================================================
-# 4.3 -- linear twist variation (tip twist relative to root, root fixed at 0)
-#
-# NOTE ON METHOD: holding the ROOT collective fixed while sweeping twist is a
-# common student mistake -- it mostly just changes the TIP angle-of-attack,
-# swamping the actual physical benefit of twist (a more uniform inflow
-# distribution -> lower induced power for the SAME thrust). The standard,
-# textbook-correct way to isolate the effect of twist (see Leishman, Ch. 3)
-# is to TRIM each twist distribution to the SAME thrust (by adjusting root
-# collective) and then compare power / FM at that matched thrust. That is
-# what this function does: for each twist_tip value it root-finds the
-# collective that reproduces the untwisted baseline's thrust, then reports
-# the resulting power and FM.
+# 4.3 - linear twist variation, trimmed to constant thrust (see module docstring)
 # ================================================================================
+def find_trim_collective(geom, T_target, rpm=OP_RPM, altitude=0.0, dT_isa=0.0,
+                          theta0_scan_deg=np.arange(4.0, 30.0 + 1e-9, 1.0)):
+    """
+    Finds the collective pitch reproducing T_target, restricted to operating
+    points where the BEMT solve actually converges.
+
+    At low collective on a heavily twisted blade, the local blade angle can
+    go strongly negative over part of the span. There, the combined blade-
+    element/momentum-theory equation can have NO real solution (a known
+    limitation of classical BEMT/momentum theory in windmill-brake-like
+    conditions -- confirmed here by scanning the residual directly, not
+    assumed). Those points are excluded from the trim search rather than
+    silently trusted, instead of using a single wide bracket that would
+    probe straight through that invalid region.
+    """
+    pts = []
+    for theta0 in theta0_scan_deg:
+        flight = FlightCondition.from_rpm(rpm, theta0, altitude=altitude, dT_isa=dT_isa)
+        with warnings.catch_warnings():
+            # This scan deliberately probes some collectives low enough to be
+            # outside the model's valid range (see docstring) -- suppress the
+            # solver's per-point warning here since non-convergence is
+            # expected and explicitly checked via res["converged"] below,
+            # not ignored.
+            warnings.simplefilter("ignore", UserWarning)
+            res = run_point(geom, flight=flight)
+        if res["converged"]:
+            pts.append((theta0, res["T"] - T_target))
+
+    for (t_a, f_a), (t_b, f_b) in zip(pts, pts[1:]):
+        if abs(f_a) < 1e-6:
+            return t_a
+        if f_a * f_b < 0:
+            def thrust_error(theta0_deg):
+                flight = FlightCondition.from_rpm(rpm, theta0_deg, altitude=altitude, dT_isa=dT_isa)
+                res = run_point(geom, flight=flight)
+                if not res["converged"]:
+                    raise RuntimeError(
+                        f"BEMT did not converge at theta0={theta0_deg:.2f} deg during "
+                        f"trim search -- narrow theta0_scan_deg to stay inside the "
+                        f"converged region found by the coarse scan.")
+                return res["T"] - T_target
+            return brentq(thrust_error, t_a, t_b, xtol=1e-3)
+
+    raise RuntimeError(
+        f"No converged bracket found for T_target={T_target:.2f} N in scan range "
+        f"{theta0_scan_deg[0]:.1f}-{theta0_scan_deg[-1]:.1f} deg for this geometry; "
+        f"widen theta0_scan_deg.")
+
+
 def study_twist():
     twist_tip_deg_values = [0.0, -4.0, -8.0, -12.0, -16.0]
 
-    # 1) establish the thrust target from the untwisted baseline at
-    #    OP_COLLECTIVE_DEG (same baseline point used throughout Task 4)
     geom0 = RotorGeometry(R=R_BASE, r_root=R_ROOT_BASE, B=B_BASE,
                            chord_root=CHORD_BASE, taper_ratio=1.0,
                            twist_root=0.0, twist_tip=0.0, n_stations=80)
@@ -205,20 +245,15 @@ def study_twist():
     for tw in twist_tip_deg_values:
         geom = RotorGeometry(R=R_BASE, r_root=R_ROOT_BASE, B=B_BASE,
                               chord_root=CHORD_BASE, taper_ratio=1.0,
-                              twist_root=0.0, twist_tip=np.radians(tw),
-                              n_stations=80)
+                              twist_root=0.0, twist_tip=np.radians(tw), n_stations=80)
 
-        def thrust_error(theta0_deg):
-            flight = FlightCondition.from_rpm(OP_RPM, theta0_deg, altitude=0.0, dT_isa=0.0)
-            return run_point(geom, flight=flight)["T"] - T_target
-
-        theta0_trim = brentq(thrust_error, 1.0, 22.0, xtol=1e-3)
+        theta0_trim = find_trim_collective(geom, T_target)
         flight_trim = FlightCondition.from_rpm(OP_RPM, theta0_trim, altitude=0.0, dT_isa=0.0)
         res = run_point(geom, flight=flight_trim)
         rows.append((tw, theta0_trim, res["T"], res["P"], res["FM"], res["stall_fraction"]))
         print(f"twist_tip={tw:+.1f} deg  (trim theta0={theta0_trim:.2f} deg)  "
               f"T={res['T']:.1f} N  P={res['P']/1000:.3f} kW  FM={res['FM']:.3f}  "
-              f"stall_frac={res['stall_fraction']:.2f}")
+              f"stall_frac={res['stall_fraction']:.2f}  converged={res['converged']}")
 
     x_arr = [r[0] for r in rows]
     T_arr = [r[2] for r in rows]
@@ -237,8 +272,10 @@ def study_twist():
 
 
 # ================================================================================
-# 4.1(c) -- rotational speed variation (bonus: handout also lists RPM as a
-# design variable to explore in Task 4's intro paragraph)
+# 4.1(c) - rotational speed variation (bonus; RPM listed as a variable in the
+# handout's Task 4 intro). See the module-level RPM note: CT/CQ don't move
+# with RPM in this model, so this sweep mainly shows the DIMENSIONAL T/P/M_tip
+# trend at fixed collective, and is a useful check for tip Mach limits.
 # ================================================================================
 def study_rpm():
     rpm_values = [700, 850, 960, 1100, 1250]
