@@ -185,6 +185,7 @@ class FlightCondition:
 # BEMT solver
 # ============================================================================
 
+
 class BEMTSolver:
     """Solves for the induced velocity at each radial station by equating
     blade-element thrust to Prandtl-tip-loss-corrected momentum-theory
@@ -198,11 +199,13 @@ class BEMTSolver:
 
     def __init__(self, geometry: RotorGeometry, airfoil: AirfoilModel,
                  use_tip_loss: bool = True, use_root_loss: bool = False,
+                 use_compressibility: bool = False,
                  max_iter: int = 100, tol: float = 1e-6):
         self.geom = geometry
         self.airfoil = airfoil
         self.use_tip_loss = use_tip_loss
         self.use_root_loss = use_root_loss
+        self.use_compressibility = use_compressibility
         self.max_iter = max_iter
         self.tol = tol
 
@@ -245,8 +248,6 @@ class BEMTSolver:
         n = len(r)
         args = (r, c, theta, Ut, V_axial, rho)
 
-        # Scan a generous window for sign changes, keeping the bracket
-        # closest to vi=0 (the physically relevant, low-induced-velocity root).
         grid = np.linspace(-1.5 * abs(Vtip) - abs(V_axial) - 1.0,
                             2.5 * abs(Vtip) + abs(V_axial) + 1.0, 300)
         vi_lo, vi_hi, best_dist = np.full(n, np.nan), np.full(n, np.nan), np.full(n, np.inf)
@@ -385,14 +386,7 @@ def error_metrics(y_pred, y_exp) -> Dict[str, float]:
     return dict(RMSE=rmse, MAE=mae, MAPE_percent=mape)
 
 
-# ============================================================================
-# Example usage
-# ============================================================================
-
 if __name__ == "__main__":
-    # Knight & Hefner (1937) validation-rotor geometry and airfoil, hover,
-    # swept over collective pitch. Replace the RPM and add digitized
-    # experimental CT/CQ points before running the Task 3 validation.
     geom = RotorGeometry(R=0.762, r_root=0.125, B=2, chord_root=0.0508, taper_ratio=1.0)
     airfoil = LinearAirfoil(a0=5.75, cd_min=0.0113, eps=1.25)
     solver = BEMTSolver(geom, airfoil)

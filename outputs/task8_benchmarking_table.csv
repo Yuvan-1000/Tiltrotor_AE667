@@ -1,0 +1,4 @@
+Rotor,R_m,B,sigma,disk_loading_kg_m2,M_tip,FM_hover
+This design,2.600,3,0.0973,70.63,0.6001,0.756
+XV-15 (Bell, metal blade),3.810,3,0.0890,69.62,0.6906,0.750
+V-22 (Bell-Boeing),5.790,3,0.1050,130.29,0.5936,0.808

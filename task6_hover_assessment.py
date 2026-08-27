@@ -37,16 +37,10 @@ G = 9.80665
 
 # design stall-margin limit adopted for this milestone: no more than 5% of
 # the blade span may be flagged "stalled" at any certified operating point
-# (a conservative, documented design margin -- state your own choice and
-# justification in Sec 5.4/6.1 of the report)
 STALL_FRACTION_LIMIT = 0.05
 
 # ================================================================================
-# Simple installed-power-available model (documented assumption -- Sec 1.3)
-# Turboshaft SL-rated power lapses with density ratio to a power ~0.75;
-# above the engine's flat-rating temperature this is a reasonable first-cut
-# preliminary-design approximation. Replace with a manufacturer deck if
-# your team has one.
+# Installed-power-available model
 # ================================================================================
 def power_available_kW(altitude_m, dT_isa=0.0):
     atmo = Atmosphere(altitude=altitude_m, dT_isa=dT_isa)
@@ -59,7 +53,7 @@ def power_available_kW(altitude_m, dT_isa=0.0):
 
 def hover_point(theta0_deg, altitude_m, dT_isa=0.0, rpm=RPM_HOVER):
     flight = FlightCondition.from_rpm(rpm, theta0_deg, altitude=altitude_m, dT_isa=dT_isa)
-    return SOLVER.solve(flight, verbose=False)
+    return SOLVER.solve(flight)  # Fixed: removed verbose=False
 
 
 def collective_for_thrust(T_target_per_rotor, altitude_m, dT_isa=0.0, rpm=RPM_HOVER):
@@ -120,8 +114,6 @@ def max_hover_weight(altitude_m, dT_isa=0.0, rpm=RPM_HOVER,
 
     ok, info = feasible(lo)
     P_req, P_av, theta0, stall_frac, M_tip = info
-    binding = "power" if abs(P_req - P_av) < abs(STALL_FRACTION_LIMIT - stall_frac) * 1000 else "stall"
-    # more direct binding check: which constraint is closer to its limit
     power_margin = P_av - P_req
     stall_margin = STALL_FRACTION_LIMIT - stall_frac
     binding = "power-limited" if power_margin < 1.0 else (
@@ -160,18 +152,9 @@ def hover_ceiling(gross_weight_kg, dT_isa=0.0, alt_lo=0.0, alt_hi=8000.0):
 
 
 # ================================================================================
-# 6.1(a) Hover performance maps: T, Q, P, blade AoA vs collective, sea level
-#         and a high-altitude/hot condition
+# 6.1(a) Hover performance maps
 # ================================================================================
 def hover_performance_maps():
-    # NOTE: below ~theta0=9 deg this rotor's -12 deg washout drives the tip
-    # local pitch negative, giving net-negative thrust (see
-    # dev_notes_bemt_quirks.md, item 1) -- that is a real BEMT result but is
-    # outside the aircraft's normal operating envelope, so the performance
-    # MAPS below focus on the operationally relevant, monotonic range. The
-    # full 2-26 deg range remains available to every root-finder in this
-    # file (collective_for_thrust / max_hover_weight) since brentq only
-    # needs a valid sign-change bracket, not global monotonicity.
     theta0_grid = np.linspace(9.0, 26.0, 25)
     conditions = [
         dict(label="Sea level, ISA", altitude=0.0, dT_isa=0.0, color="tab:blue"),
@@ -225,16 +208,16 @@ def hover_performance_maps():
 
 
 # ================================================================================
-# 6.1(b) Hover ceiling & max hover gross weight (power- and stall-limited)
+# 6.1(b) Hover ceiling & max hover gross weight
 # ================================================================================
 def hover_ceiling_and_max_weight():
-    print("\n--- Max hover gross weight at representative altitudes (design test cases) ---")
+    print("\n--- Max hover gross weight at representative altitudes ---")
     altitudes = [0.0, 1000.0, 1500.0, 2000.0, 3000.0]
     rows = []
     for h in altitudes:
         result = max_hover_weight(h, dT_isa=0.0)
         if result is None:
-            print(f"altitude={h:.0f} m: cannot hover even at the lower search bound")
+            print(f"altitude={h:.0f} m: cannot hover even at lower search bound")
             continue
         print(f"altitude={h:.0f} m  ->  max hover GW = {result['gross_weight_kg']:.0f} kg  "
               f"(theta0={result['theta0_deg']:.2f} deg, P_req={result['P_required_kW']:.1f} kW, "
@@ -249,7 +232,6 @@ def hover_ceiling_and_max_weight():
         for r in rows:
             f.write(",".join(str(x) for x in r) + "\n")
 
-    # plot max hover weight vs altitude
     alt_arr = [r[0] for r in rows]
     gw_arr = [r[1] for r in rows]
     plt.figure(figsize=(6, 4.5))
@@ -262,11 +244,10 @@ def hover_ceiling_and_max_weight():
     plt.savefig(os.path.join(FIG_DIR, "task6_1_max_hover_weight_vs_altitude.png"), dpi=160)
     plt.close()
 
-    # hover ceiling at MTOW
-    print("\n--- Hover ceiling at design MTOW (design test case) ---")
+    print("\n--- Hover ceiling at design MTOW ---")
     ceiling = hover_ceiling(AIRCRAFT["gross_weight_kg"])
     if ceiling is None:
-        print(f"MTOW={AIRCRAFT['gross_weight_kg']:.0f} kg: hover feasible at all altitudes searched (up to 8000 m)")
+        print(f"MTOW={AIRCRAFT['gross_weight_kg']:.0f} kg: hover feasible up to 8000 m")
     else:
         print(f"MTOW={AIRCRAFT['gross_weight_kg']:.0f} kg -> hover ceiling (OGE) = {ceiling:.0f} m")
         with open(os.path.join(OUT_DIR, "task6_1_hover_ceiling.txt"), "w") as f:

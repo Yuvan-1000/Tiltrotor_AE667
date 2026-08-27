@@ -14,11 +14,9 @@ over a range of advance ratios J and collective settings:
     the same adopted design limit used in Task 6) and a selected cruise
     operating point (highest eta_p inside that envelope)
 
-IMPORTANT FINDING (read the printed output / task7_notes file): the highest-
-efficiency FEASIBLE point found here is at a forward speed well below the
-110 m/s mission requirement set in Task 5. This is flagged explicitly rather
-than hidden -- see task5_tiltrotor_design.py's AIRCRAFT dict and the notes
-file this script writes for the Milestone-2 implication.
+IMPORTANT FINDING: the highest-efficiency FEASIBLE point found here is at a
+forward speed well below the 110 m/s mission requirement set in Task 5.
+This is flagged explicitly rather than hidden.
 ================================================================================
 """
 
@@ -51,7 +49,7 @@ def solve_axial(collective_deg, J, altitude=CRUISE_ALTITUDE_M):
     flight = FlightCondition(Omega=RPM_CRUISE * 2.0 * np.pi / 60.0,
                               collective=np.radians(collective_deg),
                               altitude=altitude, dT_isa=0.0, V_axial=V)
-    res = SOLVER.solve(flight, verbose=False)
+    res = SOLVER.solve(flight)  # Fixed: removed verbose=False
     eta_p = (res["T"] * V / res["P"]) if res["P"] > 0 else float("nan")
     return res, V, eta_p
 
