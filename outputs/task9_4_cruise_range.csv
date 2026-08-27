@@ -1,0 +1,6 @@
+cruise_speed_ms,range_km,binding_constraint
+15.0,900.0,fuel at/below reserve (47.9 kg <= reserve 50.0 kg)
+18.0,961.2,fuel at/below reserve (49.7 kg <= reserve 50.0 kg)
+20.0,996.0,fuel at/below reserve (48.6 kg <= reserve 50.0 kg)
+22.0,1029.6,fuel at/below reserve (45.1 kg <= reserve 50.0 kg)
+25.0,1050.0,fuel at/below reserve (47.9 kg <= reserve 50.0 kg)

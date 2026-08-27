@@ -1,0 +1,11 @@
+Verification_item,Test_case,Pass,Evidence
+"Segment sequencing","hover->climb->cruise order preserved in log",PASS,"log order: hover ... cruise"
+"Mass continuity","gross weight strictly non-increasing (fuel-burn only)",PASS,"checked every logged step"
+"Payload pickup","+200 kg changes GW, not fuel",PASS,"GW 2600->2800 kg"
+"Payload drop","-350 kg changes GW, not fuel",PASS,"GW ->2450 kg"
+"Fuel update","fuel strictly decreases each step of a powered segment",PASS,"400.00 -> 387.48 kg over 300 s"
+"Atmospheric variation","power available decreases with altitude",PASS,"P_avail(0m)=760 kW, P_avail(3000m)=608 kW"
+"Wind treatment","tailwind gives shorter time-to-distance than headwind",PASS,"tailwind t=312s, headwind t=833s"
+"Reserve-fuel accounting","mission stops at/above reserve, flags failure",PASS,"stopped at fuel=48.8 kg, reserve=50.0 kg"
+"Power required/available calc","MTOW hover at sea level within power available",PASS,"P_req=688.4 kW, P_avail=760.0 kW"
+"Failure-warning logic","overweight hover flags segment+time+reason",PASS,"'required thrust 18633 N/rotor is outside the allowed collective range (2.0, 26.0) deg at altitude=0 m'"

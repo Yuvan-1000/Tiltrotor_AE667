@@ -24,33 +24,6 @@ At every time step the planner:
   6. runs ALL Task-10 feasibility checks (fuel, power margin, stall, tip
      Mach, collective/RPM bounds) and stops the mission immediately, with
      a clear segment/time/reason message, on the first violation
-
---------------------------------------------------------------------------------
-DOCUMENTED ASSUMPTIONS (Sec 1.3 -- keep in sync with the code):
-  A1. Quasi-steady segments: within one time step the aircraft is assumed
-      to be in steady, trimmed flight at the segment's target condition
-      (climb rate, airspeed, etc.) -- no acceleration/transient/trim
-      transients are modeled between steps.
-  A2. Hover/climb/descent/loiter use RPM_HOVER; cruise uses RPM_CRUISE
-      (the 2-speed schedule defined in task5_tiltrotor_design.py).
-  A3. Cruise thrust required is estimated from an ASSUMED cruise lift-to-
-      drag ratio (CRUISE_L_OVER_D below) rather than a full wing/fuselage
-      drag build-up, which is outside a BEMT-only milestone's scope:
-      required thrust (both rotors) = gross_weight * g / CRUISE_L_OVER_D.
-  A4. Wind during cruise affects GROUND SPEED (and therefore time/fuel to
-      cover a given distance) but not the required THRUST, which depends
-      on true airspeed only (a fixed-wing-like cruise assumption -- the
-      wing, not the rotors, carries the weight in airplane mode).
-  A5. Climb/descent thrust required = gross_weight * g (i.e., climb rate
-      is achieved by the excess power implicit in the BEMT solve's
-      V_climb input rather than by an explicit excess-thrust/acceleration
-      term) -- standard simplification for a first-pass mission planner.
-  A6. Reserve fuel = AIRCRAFT["reserve_fuel_fraction"] * fuel_capacity_kg
-      is reserved and NOT available for any planned segment; a mission is
-      infeasible if usable fuel would be exhausted before reserve.
-  A7. SFC (kg fuel per kWh of SHAFT power) is constant with altitude/power
-      setting (a simplification -- real turboshaft SFC varies with power
-      setting; see AIRCRAFT["sfc_kg_per_kWh"] in task5).
 ================================================================================
 """
 
@@ -64,16 +37,15 @@ from task5_tiltrotor_design import (
 )
 
 G = 9.80665
-CRUISE_L_OVER_D = 8.5          # documented assumption A3 above
-STALL_FRACTION_LIMIT = 0.05     # same design margin adopted in Tasks 6-7
-M_TIP_LIMIT = 0.72               # mission-level compressibility limit (some
-                                  # margin above the design M_tip of 0.60/0.52)
+CRUISE_L_OVER_D = 8.5          # documented assumption A3
+STALL_FRACTION_LIMIT = 0.05     # design margin adopted in Tasks 6-7
+M_TIP_LIMIT = 0.72               # mission-level compressibility limit
 
 SOLVER = build_solver()
 
 
 # ================================================================================
-# Shared helpers (power-available model identical in spirit to Task 6's)
+# Shared helpers
 # ================================================================================
 def power_available_kW(altitude_m, dT_isa=0.0):
     atmo = Atmosphere(altitude=altitude_m, dT_isa=dT_isa)
@@ -93,11 +65,11 @@ def _collective_for_thrust(T_target_per_rotor, altitude_m, dT_isa, rpm, coll_ran
                                   collective=np.radians(theta0_deg),
                                   altitude=altitude_m, dT_isa=dT_isa,
                                   V_climb=V_climb, V_axial=V_axial)
-        return SOLVER.solve(flight, verbose=False)["T"] - T_target_per_rotor
+        return SOLVER.solve(flight)["T"] - T_target_per_rotor  # Fixed: removed verbose=False
 
     f_lo, f_hi = f(lo), f(hi)
     if f_lo > 0 or f_hi < 0:
-        return None   # cannot reach this thrust within the allowed collective range
+        return None   # cannot reach thrust within allowed collective range
     return brentq(f, lo, hi, xtol=1e-3)
 
 
@@ -110,12 +82,12 @@ def _solve_for_thrust(T_target_per_rotor, altitude_m, dT_isa, rpm, coll_range,
     flight = FlightCondition(Omega=rpm * 2.0 * np.pi / 60.0, collective=np.radians(theta0),
                               altitude=altitude_m, dT_isa=dT_isa,
                               V_climb=V_climb, V_axial=V_axial)
-    res = SOLVER.solve(flight, verbose=False)
+    res = SOLVER.solve(flight)  # Fixed: removed verbose=False
     return theta0, res
 
 
 # ================================================================================
-# Aircraft state
+# Aircraft state & Exception handling
 # ================================================================================
 class AircraftState:
     def __init__(self, gross_weight_kg, fuel_kg):
@@ -144,7 +116,7 @@ class MissionPlanner:
         self.dT_isa = dT_isa
         self.wind_ms = wind_ms          # +tailwind / -headwind, cruise only
         self.reserve_fuel_kg = AIRCRAFT["reserve_fuel_fraction"] * AIRCRAFT["fuel_capacity_kg"]
-        self.log = []          # list of dict rows, one per time step
+        self.log = []          # list of dict rows per time step
         self.failed = False
         self.failure = None
 
@@ -171,7 +143,7 @@ class MissionPlanner:
         row.update(theta0_deg=theta0, P_required_kW=P_shaft_kW, P_available_kW=P_avail_kW,
                    stall_fraction=res["stall_fraction"], M_tip=res["M_tip"])
 
-        # ---- Task 10 feasibility checks (in a defined priority order) ----
+        # ---- Task 10 feasibility checks (in defined priority order) ----
         if self.state.fuel_kg <= self.reserve_fuel_kg:
             self._fail(label, f"fuel at/below reserve ({self.state.fuel_kg:.1f} kg <= "
                                f"reserve {self.reserve_fuel_kg:.1f} kg)", row)
@@ -191,7 +163,7 @@ class MissionPlanner:
             self._fail(label, f"collective {theta0:.2f} deg outside allowed range {coll_range}", row)
             return row
 
-        # ---- fuel burn & mass update for this time step ----
+        # ---- fuel burn & mass update ----
         fuel_used_kg = AIRCRAFT["sfc_kg_per_kWh"] * P_shaft_kW * (dt_s / 3600.0)
         self.state.fuel_kg -= fuel_used_kg
         self.state.gross_weight_kg -= fuel_used_kg
@@ -233,7 +205,7 @@ class MissionPlanner:
         while self.state.time_s < t_end and not self.failed:
             dt = min(self.dt_s, t_end - self.state.time_s)
             alt_now = min(target_altitude_m, alt_now + climb_rate_ms * dt)
-            T_target = self.state.gross_weight_kg * G / AIRCRAFT["n_rotors"]  # assumption A5
+            T_target = self.state.gross_weight_kg * G / AIRCRAFT["n_rotors"]
             self._step(label, alt_now, T_target, RPM_HOVER,
                        COLLECTIVE_RANGE_HOVER_DEG, V_climb=climb_rate_ms, dt_s=dt)
             if self.failed:
@@ -257,7 +229,7 @@ class MissionPlanner:
                 return
 
     def cruise(self, distance_km, altitude_m, airspeed_ms, label="cruise"):
-        ground_speed_ms = airspeed_ms + self.wind_ms   # assumption A4
+        ground_speed_ms = airspeed_ms + self.wind_ms
         if ground_speed_ms <= 0:
             self._fail(label, f"ground speed {ground_speed_ms:.1f} m/s <= 0 "
                                f"(headwind {abs(self.wind_ms):.1f} m/s exceeds airspeed)")
@@ -287,7 +259,6 @@ class MissionPlanner:
                 return row["altitude_m"]
         return default
 
-    # ---- run a declarative mission (list of segment dicts) -------------
     def run(self, segments):
         for seg in segments:
             if self.failed:

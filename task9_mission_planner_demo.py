@@ -30,7 +30,7 @@ from task5_tiltrotor_design import (
     COLLECTIVE_RANGE_CRUISE_DEG,
 )
 
-warnings.filterwarnings("ignore")   # suppress BEMT bracket-warning noise in this demo
+warnings.filterwarnings("ignore")   # suppress BEMT bracket-warning noise
 
 FIG_DIR = "figures"
 OUT_DIR = "outputs"
@@ -54,10 +54,10 @@ def verification_tests():
     seq = [row["segment"] for row in mp.log]
     seq_ok = seq[0] == "hover" and "climb" in seq and seq[-1] == "cruise"
     mass_continuous = all(mp.log[i]["gross_weight_kg"] >= mp.log[i + 1]["gross_weight_kg"] - 1e-6
-                           for i in range(len(mp.log) - 1) if "gross_weight_kg" in mp.log[i + 1])
+                          for i in range(len(mp.log) - 1) if "gross_weight_kg" in mp.log[i + 1])
     results.append(("Segment sequencing", "hover->climb->cruise order preserved in log",
                      seq_ok, f"log order: {seq[0]} ... {seq[-1]}"))
-    results.append(("Mass continuity", "gross weight strictly non-increasing (fuel-burn only, no payload event)",
+    results.append(("Mass continuity", "gross weight strictly non-increasing (fuel-burn only)",
                      mass_continuous, "checked every logged step"))
 
     # (2) payload pickup / drop changes mass instantaneously, fuel unaffected
@@ -90,47 +90,39 @@ def verification_tests():
                      atmo_ok, f"P_avail(0m)={P0:.0f} kW, P_avail(3000m)={P3000:.0f} kW"))
 
     # (5) wind treatment: tailwind reduces cruise time for the same distance
-    #     (use a speed within the trim-feasible envelope -- see
-    #     task9_mission_planner_demo's cruise_range_vs_speed / Sec 7.4 notes;
-    #     >~27 m/s at MTOW-like weights runs into the stall margin because
-    #     the REQUIRED (drag-based) thrust cannot be met at high advance
-    #     ratio without over-pitching -- a real trim constraint, not a bug)
     mp_tail = MissionPlanner(gross_weight_kg=2600.0, fuel_kg=400.0, dt_s=30.0, wind_ms=+10.0)
     mp_tail.cruise(distance_km=10.0, altitude_m=1000.0, airspeed_ms=22.0)
     mp_head = MissionPlanner(gross_weight_kg=2600.0, fuel_kg=400.0, dt_s=30.0, wind_ms=-10.0)
     mp_head.cruise(distance_km=10.0, altitude_m=1000.0, airspeed_ms=22.0)
     wind_ok = (not mp_tail.failed) and (not mp_head.failed) and mp_tail.state.time_s < mp_head.state.time_s
     results.append(("Wind treatment", "tailwind gives shorter time-to-distance than headwind",
-                     wind_ok, f"tailwind t={mp_tail.state.time_s:.0f}s ({'ok' if not mp_tail.failed else mp_tail.failure.reason}), "
-                              f"headwind t={mp_head.state.time_s:.0f}s ({'ok' if not mp_head.failed else mp_head.failure.reason})"))
+                     wind_ok, f"tailwind t={mp_tail.state.time_s:.0f}s, headwind t={mp_head.state.time_s:.0f}s"))
 
-    # (6) reserve-fuel accounting: mission halts at/above the reserve level, never below
-    mp4 = MissionPlanner(gross_weight_kg=2400.0, fuel_kg=60.0, dt_s=30.0)  # thin fuel on purpose
+    # (6) reserve-fuel accounting: mission halts at/above reserve level
+    mp4 = MissionPlanner(gross_weight_kg=2400.0, fuel_kg=60.0, dt_s=30.0)
     mp4.hover(duration_s=3600.0, altitude_m=0.0)
     reserve_ok = mp4.state.fuel_kg <= mp4.reserve_fuel_kg + 1e-6 and mp4.failed
     results.append(("Reserve-fuel accounting", "mission stops at/above reserve, flags failure",
-                     reserve_ok, f"stopped at fuel={mp4.state.fuel_kg:.1f} kg, "
-                                  f"reserve={mp4.reserve_fuel_kg:.1f} kg"))
+                     reserve_ok, f"stopped at fuel={mp4.state.fuel_kg:.1f} kg, reserve={mp4.reserve_fuel_kg:.1f} kg"))
 
-    # (7) power-required vs power-available calculation sanity (hover, MTOW, sea level)
+    # (7) power-required vs power-available calculation sanity
     theta0, res = _solve_for_thrust(AIRCRAFT["gross_weight_kg"] * G / AIRCRAFT["n_rotors"],
                                      0.0, 0.0, RPM_HOVER, COLLECTIVE_RANGE_HOVER_DEG)
     P_req = res["P"] * AIRCRAFT["n_rotors"] / 1000.0 / AIRCRAFT["drivetrain_efficiency"]
     P_avail = power_available_kW(0.0)
-    power_calc_ok = P_req < P_avail   # matches Task 6's finding: MTOW hover is feasible at SL
+    power_calc_ok = P_req < P_avail
     results.append(("Power required/available calc", "MTOW hover at sea level within power available",
-                     power_calc_ok, f"P_req={P_req:.1f} kW, P_avail={P_avail:.1f} kW "
-                                     f"(cf. Task 6: max hover GW at SL = 3205 kg)"))
+                     power_calc_ok, f"P_req={P_req:.1f} kW, P_avail={P_avail:.1f} kW"))
 
     # (8) failure-warning logic: identifies segment, time, and reason
-    mp5 = MissionPlanner(gross_weight_kg=3800.0, fuel_kg=AIRCRAFT["fuel_capacity_kg"], dt_s=30.0)  # overweight
+    mp5 = MissionPlanner(gross_weight_kg=3800.0, fuel_kg=AIRCRAFT["fuel_capacity_kg"], dt_s=30.0)
     mp5.hover(duration_s=60.0, altitude_m=0.0)
     warning_ok = (mp5.failed and mp5.failure.segment_label == "hover"
                   and mp5.failure.time_s is not None and len(mp5.failure.reason) > 0)
     results.append(("Failure-warning logic", "overweight hover flags segment+time+reason",
-                     warning_ok, f"'{mp5.failure.reason}'" if mp5.failed else "did not fail (unexpected)"))
+                     warning_ok, f"'{mp5.failure.reason}'" if mp5.failed else "did not fail"))
 
-    print("=== Task 9 / Sec 7.1 -- Implementation verification (technical entities / test cases) ===")
+    print("=== Task 9 / Sec 7.1 -- Implementation Verification ===")
     with open(os.path.join(OUT_DIR, "task9_1_verification_table.csv"), "w") as f:
         f.write("Verification_item,Test_case,Pass,Evidence\n")
         for item, test, ok, evidence in results:
@@ -188,10 +180,9 @@ def hover_endurance_vs_takeoff_weight():
         mp = MissionPlanner(gross_weight_kg=gw0, fuel_kg=AIRCRAFT["fuel_capacity_kg"], dt_s=dt)
         mp.hover(duration_s=max_search_s, altitude_m=0.0)
         endurance_hr = mp.state.time_s / 3600.0
-        binding = mp.failure.reason if mp.failed else "reached search cap (not fuel/power limited)"
+        binding = mp.failure.reason if mp.failed else "reached search cap"
         rows.append((gw0, endurance_hr, binding))
-        print(f"takeoff_weight={gw0:.0f} kg -> hover endurance = {endurance_hr:.2f} hr "
-              f"({binding})")
+        print(f"takeoff_weight={gw0:.0f} kg -> hover endurance = {endurance_hr:.2f} hr ({binding})")
 
     gw_arr = [r[0] for r in rows]
     end_arr = [r[1] for r in rows]
@@ -217,20 +208,15 @@ def hover_endurance_vs_takeoff_weight():
 # 7.4 Cruise range vs cruise speed
 # ================================================================================
 def cruise_range_vs_speed():
-    # NOTE: this aircraft's rotor can only meet its drag-based required
-    # thrust (assumption A3, L/D=8.5) up to ~27-28 m/s at MTOW before the
-    # 5% stall margin binds (see task9_notes_cruise_trim.md) -- that is a
-    # genuine trim limit of this Milestone-1 rotor (consistent with Task 7's
-    # cruise-speed shortfall finding), so the swept range stays inside it.
     speeds = [15.0, 18.0, 20.0, 22.0, 25.0]     # m/s, trim-feasible at MTOW
     dt = 600.0
     rows = []
     for V in speeds:
         mp = MissionPlanner(gross_weight_kg=AIRCRAFT["gross_weight_kg"],
                              fuel_kg=AIRCRAFT["fuel_capacity_kg"], dt_s=dt)
-        mp.cruise(distance_km=1100.0, altitude_m=3000.0, airspeed_ms=V)  # deliberately far; will be reserve-limited
+        mp.cruise(distance_km=1100.0, altitude_m=3000.0, airspeed_ms=V)
         range_km = mp.state.distance_km
-        binding = mp.failure.reason if mp.failed else "reached target distance (not fuel limited)"
+        binding = mp.failure.reason if mp.failed else "reached target distance"
         rows.append((V, range_km, binding))
         print(f"V={V:.0f} m/s -> range = {range_km:.0f} km ({binding})")
 

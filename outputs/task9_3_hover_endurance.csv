@@ -1,0 +1,7 @@
+takeoff_weight_kg,endurance_hr,binding_constraint
+2200.0,4.000,reached search cap
+2400.0,3.500,fuel at/below reserve (47.6 kg <= reserve 50.0 kg)
+2600.0,3.100,fuel at/below reserve (46.3 kg <= reserve 50.0 kg)
+2800.0,2.733,fuel at/below reserve (49.9 kg <= reserve 50.0 kg)
+3000.0,2.467,fuel at/below reserve (47.2 kg <= reserve 50.0 kg)
+3200.0,2.233,fuel at/below reserve (45.7 kg <= reserve 50.0 kg)
