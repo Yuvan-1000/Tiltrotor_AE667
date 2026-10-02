@@ -1,0 +1,8 @@
+Item,M1 baseline,M2 adopted/refined value,Reason
+Rotor aerodynamic model,Axisymmetric axial BEMT,Azimuth-resolved edgewise BEMT + cyclic + reverse-flow/Mach/stall checks,M2 forward-flight/conversion physics
+Rotor geometry,"R=2.6 m, B=3, mild taper, 0→-12° twist",Retained validated geometry,Avoid changing a geometry that already met M1 baseline requirements
+RPM schedule,750 helicopter / 650 airplane,Same end-state schedule; linearly scheduled through conversion examples,Controls tip Mach and power without changing M1 geometry
+Wing model,L/D=8.5 cruise proxy,Explicit 60 m² wing CL/CD model,Provides lift sharing and speed-dependent drag
+Nacelle schedule,Only 0° and 90° states,Continuous 0–90° schedule with user-defined rate,Creates a conversion corridor
+Control limits,No full transition control set,"collective, ±8° cyclic, elevator/rudder/aileron bounds",Enables bounded trim and feasibility checks
+Mass properties,Narrative values could differ from code,single source 1950+550+500=3000 kg,Directly fixes M1 grading feedback

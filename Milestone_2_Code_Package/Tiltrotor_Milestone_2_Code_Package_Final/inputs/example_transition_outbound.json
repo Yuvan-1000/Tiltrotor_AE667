@@ -1,0 +1,515 @@
+{
+  "initial_fuel_kg": 500.0,
+  "gross_weight_kg": 3000.0,
+  "wind_ms": 0.0,
+  "dt_s": 1.0,
+  "segments": [
+    {
+      "name": "takeoff_and_climb",
+      "duration_s": 10.0,
+      "airspeed_ms": [
+        5.0,
+        8.0
+      ],
+      "altitude_m": [
+        0.0,
+        500.0
+      ],
+      "nacelle_angle_deg": [
+        90.0,
+        90.0
+      ],
+      "rpm": [
+        750.0,
+        750.0
+      ],
+      "climb_rate_ms": 2.0,
+      "wind_ms": 0.0,
+      "control_source": "scheduled",
+      "enforce_trim": false,
+      "controls": {
+        "pitch_deg": [
+          0,
+          0
+        ],
+        "collective_deg": [
+          24,
+          24
+        ],
+        "theta_1c_lateral_deg": [
+          0,
+          0
+        ],
+        "theta_1s_longitudinal_deg": [
+          0,
+          0
+        ],
+        "elevator_deg": [
+          0,
+          0
+        ],
+        "rudder_deg": [
+          0,
+          0
+        ],
+        "aileron_deg": [
+          0,
+          0
+        ]
+      }
+    },
+    {
+      "name": "hover_to_airplane_01",
+      "duration_s": 4.0,
+      "airspeed_ms": [
+        8.0,
+        10.0
+      ],
+      "altitude_m": [
+        500.0,
+        500.0
+      ],
+      "nacelle_angle_deg": [
+        90.0,
+        75.0
+      ],
+      "rpm": [
+        750.0,
+        750.0
+      ],
+      "climb_rate_ms": 0.0,
+      "wind_ms": 0.0,
+      "control_source": "scheduled",
+      "enforce_trim": false,
+      "controls": {
+        "pitch_deg": [
+          0.0,
+          0.0
+        ],
+        "collective_deg": [
+          24.0,
+          24.6
+        ],
+        "theta_1c_lateral_deg": [
+          0,
+          0
+        ],
+        "theta_1s_longitudinal_deg": [
+          0,
+          0
+        ],
+        "elevator_deg": [
+          0,
+          0
+        ],
+        "rudder_deg": [
+          0,
+          0
+        ],
+        "aileron_deg": [
+          0,
+          0
+        ]
+      }
+    },
+    {
+      "name": "hover_to_airplane_02",
+      "duration_s": 4.0,
+      "airspeed_ms": [
+        10.0,
+        15.0
+      ],
+      "altitude_m": [
+        500.0,
+        500.0
+      ],
+      "nacelle_angle_deg": [
+        75.0,
+        60.0
+      ],
+      "rpm": [
+        750.0,
+        750.0
+      ],
+      "climb_rate_ms": 0.0,
+      "wind_ms": 0.0,
+      "control_source": "scheduled",
+      "enforce_trim": false,
+      "controls": {
+        "pitch_deg": [
+          0.0,
+          8.0
+        ],
+        "collective_deg": [
+          24.6,
+          24.0
+        ],
+        "theta_1c_lateral_deg": [
+          0,
+          0
+        ],
+        "theta_1s_longitudinal_deg": [
+          0,
+          0
+        ],
+        "elevator_deg": [
+          0,
+          0
+        ],
+        "rudder_deg": [
+          0,
+          0
+        ],
+        "aileron_deg": [
+          0,
+          0
+        ]
+      }
+    },
+    {
+      "name": "hover_to_airplane_03",
+      "duration_s": 4.0,
+      "airspeed_ms": [
+        15.0,
+        18.0
+      ],
+      "altitude_m": [
+        500.0,
+        500.0
+      ],
+      "nacelle_angle_deg": [
+        60.0,
+        50.0
+      ],
+      "rpm": [
+        750.0,
+        650.0
+      ],
+      "climb_rate_ms": 0.0,
+      "wind_ms": 0.0,
+      "control_source": "scheduled",
+      "enforce_trim": false,
+      "controls": {
+        "pitch_deg": [
+          8.0,
+          8.0
+        ],
+        "collective_deg": [
+          24.0,
+          27.0
+        ],
+        "theta_1c_lateral_deg": [
+          0,
+          0
+        ],
+        "theta_1s_longitudinal_deg": [
+          0,
+          0
+        ],
+        "elevator_deg": [
+          0,
+          0
+        ],
+        "rudder_deg": [
+          0,
+          0
+        ],
+        "aileron_deg": [
+          0,
+          0
+        ]
+      }
+    },
+    {
+      "name": "hover_to_airplane_04",
+      "duration_s": 4.0,
+      "airspeed_ms": [
+        18.0,
+        20.0
+      ],
+      "altitude_m": [
+        500.0,
+        500.0
+      ],
+      "nacelle_angle_deg": [
+        50.0,
+        45.0
+      ],
+      "rpm": [
+        650.0,
+        650.0
+      ],
+      "climb_rate_ms": 0.0,
+      "wind_ms": 0.0,
+      "control_source": "scheduled",
+      "enforce_trim": false,
+      "controls": {
+        "pitch_deg": [
+          8.0,
+          7.0
+        ],
+        "collective_deg": [
+          27.0,
+          28.0
+        ],
+        "theta_1c_lateral_deg": [
+          0,
+          0
+        ],
+        "theta_1s_longitudinal_deg": [
+          0,
+          0
+        ],
+        "elevator_deg": [
+          0,
+          0
+        ],
+        "rudder_deg": [
+          0,
+          0
+        ],
+        "aileron_deg": [
+          0,
+          0
+        ]
+      }
+    },
+    {
+      "name": "hover_to_airplane_05",
+      "duration_s": 4.0,
+      "airspeed_ms": [
+        20.0,
+        25.0
+      ],
+      "altitude_m": [
+        500.0,
+        500.0
+      ],
+      "nacelle_angle_deg": [
+        45.0,
+        30.0
+      ],
+      "rpm": [
+        650.0,
+        650.0
+      ],
+      "climb_rate_ms": 0.0,
+      "wind_ms": 0.0,
+      "control_source": "scheduled",
+      "enforce_trim": false,
+      "controls": {
+        "pitch_deg": [
+          7.0,
+          7.0
+        ],
+        "collective_deg": [
+          28.0,
+          28.0
+        ],
+        "theta_1c_lateral_deg": [
+          0,
+          0
+        ],
+        "theta_1s_longitudinal_deg": [
+          0,
+          0
+        ],
+        "elevator_deg": [
+          0,
+          0
+        ],
+        "rudder_deg": [
+          0,
+          0
+        ],
+        "aileron_deg": [
+          0,
+          0
+        ]
+      }
+    },
+    {
+      "name": "hover_to_airplane_06",
+      "duration_s": 4.0,
+      "airspeed_ms": [
+        25.0,
+        28.0
+      ],
+      "altitude_m": [
+        500.0,
+        500.0
+      ],
+      "nacelle_angle_deg": [
+        30.0,
+        20.0
+      ],
+      "rpm": [
+        650.0,
+        650.0
+      ],
+      "climb_rate_ms": 0.0,
+      "wind_ms": 0.0,
+      "control_source": "scheduled",
+      "enforce_trim": false,
+      "controls": {
+        "pitch_deg": [
+          7.0,
+          7.0
+        ],
+        "collective_deg": [
+          28.0,
+          28.0
+        ],
+        "theta_1c_lateral_deg": [
+          0,
+          0
+        ],
+        "theta_1s_longitudinal_deg": [
+          0,
+          0
+        ],
+        "elevator_deg": [
+          0,
+          0
+        ],
+        "rudder_deg": [
+          0,
+          0
+        ],
+        "aileron_deg": [
+          0,
+          0
+        ]
+      }
+    },
+    {
+      "name": "hover_to_airplane_07",
+      "duration_s": 4.0,
+      "airspeed_ms": [
+        28.0,
+        32.0
+      ],
+      "altitude_m": [
+        500.0,
+        500.0
+      ],
+      "nacelle_angle_deg": [
+        20.0,
+        10.0
+      ],
+      "rpm": [
+        650.0,
+        650.0
+      ],
+      "climb_rate_ms": 0.0,
+      "wind_ms": 0.0,
+      "control_source": "scheduled",
+      "enforce_trim": false,
+      "controls": {
+        "pitch_deg": [
+          7.0,
+          7.0
+        ],
+        "collective_deg": [
+          28.0,
+          30.0
+        ],
+        "theta_1c_lateral_deg": [
+          0,
+          0
+        ],
+        "theta_1s_longitudinal_deg": [
+          0,
+          0
+        ],
+        "elevator_deg": [
+          0,
+          0
+        ],
+        "rudder_deg": [
+          0,
+          0
+        ],
+        "aileron_deg": [
+          0,
+          0
+        ]
+      }
+    },
+    {
+      "name": "hover_to_airplane_08",
+      "duration_s": 4.0,
+      "airspeed_ms": [
+        32.0,
+        35.0
+      ],
+      "altitude_m": [
+        500.0,
+        500.0
+      ],
+      "nacelle_angle_deg": [
+        10.0,
+        0.0
+      ],
+      "rpm": [
+        650.0,
+        650.0
+      ],
+      "climb_rate_ms": 0.0,
+      "wind_ms": 0.0,
+      "control_source": "scheduled",
+      "enforce_trim": false,
+      "controls": {
+        "pitch_deg": [
+          7.0,
+          7.0
+        ],
+        "collective_deg": [
+          30.0,
+          28.0
+        ],
+        "theta_1c_lateral_deg": [
+          0,
+          0
+        ],
+        "theta_1s_longitudinal_deg": [
+          0,
+          0
+        ],
+        "elevator_deg": [
+          0,
+          0
+        ],
+        "rudder_deg": [
+          0,
+          0
+        ],
+        "aileron_deg": [
+          0,
+          0
+        ]
+      }
+    },
+    {
+      "name": "airplane_mode_hold",
+      "duration_s": 5.0,
+      "airspeed_ms": 35.0,
+      "altitude_m": 500.0,
+      "nacelle_angle_deg": 0.0,
+      "rpm": 650.0,
+      "climb_rate_ms": 0.0,
+      "wind_ms": 0.0,
+      "control_source": "scheduled",
+      "enforce_trim": false,
+      "controls": {
+        "pitch_deg": 7.0,
+        "collective_deg": 28.0,
+        "theta_1c_lateral_deg": 0.0,
+        "theta_1s_longitudinal_deg": 0.0,
+        "elevator_deg": 0.0,
+        "rudder_deg": 0.0,
+        "aileron_deg": 0.0
+      }
+    }
+  ]
+}

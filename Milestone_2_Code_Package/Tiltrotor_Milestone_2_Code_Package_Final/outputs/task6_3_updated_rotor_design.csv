@@ -1,0 +1,12 @@
+Parameter,M1 baseline,M2 value,Units / note
+Radius,2.6,2.6,m
+Root cut-out,0.35,0.35,m
+Blades,3,3,-
+Root chord,0.34,0.34,m
+Taper,0.8,0.8,c_tip/c_root
+Twist,0 to -12°,0 to -12°,deg
+RPM,750 heli / 650 airplane,750 heli / 650 airplane; transition schedule user-controlled,RPM
+Collective limits,2–26° hover; 5–35° cruise,same,deg
+Cyclic limits,not used,±8°,deg
+Stall criterion,±12° flag,±12° flag; 5% warning / 25% hard screen,deg/span
+Tip-Mach limit,M1 screening,0.72,-

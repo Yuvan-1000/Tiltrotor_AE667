@@ -1,0 +1,8 @@
+Planned addition,Motivation,Priority
+Realistic Re/Mach-dependent airfoil polar,Remove dependence on linear Cl/Cd and model post-stall accurately,High
+Blade flapping / TPP dynamics,Represent cyclic-to-TPP phase lag and realistic hub moments,High
+Rotor wake / wing interference,Account for download and transition wake interaction,High
+Full 6-DOF trim with sideslip,Release symmetry assumptions and include beta/aileron coupling,High
+Higher-fidelity propulsion map,Replace density-only power availability with engine map,Medium
+Transient conversion dynamics,"Integrate nacelle rate, rotor controls and aircraft attitude dynamics",Medium
+Adaptive mission/trim recovery,Online trim with robust failure recovery and adaptive time step,Medium

@@ -1,0 +1,5 @@
+Component,Area / span,Aspect ratio / model,Incidence,Location / control
+Main wing,60.0 m² / 12.0 m,AR=2.40; CLα=5.20/rad; parabolic CD,2°,main wing / aileron
+Horizontal tail,10.0 m² / 3.8 m,CLα=4.20/rad,-1°,"aft / elevator, arm 5.0 m"
+Vertical tail,3.0 m² / —,linear CYδr/Cnδr,0°,"aft / rudder, arm 4.5 m"
+Fuselage + nacelles,0.99 m² eq. flat plate,parasite drag only,—,near CG / no wake model

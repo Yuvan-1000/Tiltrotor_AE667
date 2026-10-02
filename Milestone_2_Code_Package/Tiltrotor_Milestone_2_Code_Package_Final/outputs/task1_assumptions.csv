@@ -1,0 +1,19 @@
+Section,Item,Value / method,Justification / impact
+1.1,Inertial frame,"NED: +X_I forward, +Y_I right, +Z_I down",NED inertial convention; altitude is measured along -Z_I.
+1.1,Aircraft body frame,"Origin at CG; +X_B forward, +Y_B starboard, +Z_B down",All aircraft loads and moments use this frame.
+1.1,Rotor-shaft frame,+z_R along rotor thrust; γ=90° helicopter and γ=0° airplane,Rotor force/moment is transformed with a direction-cosine matrix.
+1.1,Tip-path plane,TPP = shaft plane because β=0,Explicit rigid-disk approximation; no flapping dynamics.
+1.1,Blade-element frame,"r/t/n local radial, tangential and shaft-normal directions",Used to convert sectional lift/drag into thrust/tangential loads.
+1.1,Azimuth,ψ=0 reference blade; ψ increases in rotor rotation sense; ψ=90° advancing,"Same convention is used in code, plots, and lecture pitch law."
+1.1,Cyclic pitch,"θ=θ0+θ1c cosψ+θ1s sinψ; θ1c lateral, θ1s longitudinal",Matches AE 667 Blade Dynamics lecture convention.
+1.2,Flapping,"Rigid disk, β=0",Allowed approximation for this milestone; removes flapping velocity term.
+1.2,Reverse flow,U_T<0 flagged; default policy excludes those elements from forward-flow integration,Avoids extrapolating forward-flow polar into reverse flow.
+1.2,Stall,|α|>12° flagged; 5% span warning and 25% span hard screening limit,Linear airfoil model cannot model post-stall physics.
+1.2,Compressibility,Advancing-tip Mach monitored with M_adv ≤ 0.72,No high-Mach correction applied to adopted linear polar.
+1.2,Inflow,"M2 handout: λ_i/λ_i,Glauert = 1 + [(4/3)(μ/λ_G)/(1.2+μ/λ_G)](r/R)cosψ",λ_G is total inflow ratio; only induced component is azimuthally redistributed.
+1.3,Mass budget,1950 empty + 550 payload + 500 fuel = 3000 kg,Single source of truth fixes the M1 grading inconsistency.
+1.3,Wing,"S=60.0 m², b=12.0 m, AR=2.40, incidence=2.0°",Preliminary lift/drag model for transition.
+1.3,Empennage,"HT S=10.0 m², arm=5.0 m; VT S=3.0 m², arm=4.5 m",Provides pitch/yaw control authority for trim.
+1.3,Fuselage/nacelles,Equivalent flat plate=0.99 m²,Parasite drag only; rotor wake/interference omitted.
+1.3,Rotor placement,"Hub r_B = (0.35, ±3.45, 0.00) m",CG placement moment r×F is included.
+1.3,Control limits,"Collective 2–35°, cyclic ±8°, elevator/rudder ±15°, aileron ±10°",Used consistently by trim and mission feasibility checks.

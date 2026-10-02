@@ -1,108 +1,182 @@
 """
 task2_edgewise_model.py
 ================================================================================
-Milestone-2 Task 2 / Report Sec 2.1: "Edgewise BEMT formulation" -- a worked
-demonstration of edgewise_bemt.py on the actual designed rotor
-(task5_tiltrotor_design.TILTROTOR_GEOM / TILTROTOR_AIRFOIL), at a
-representative low-speed helicopter-mode forward-flight point.
+Milestone 2 Task 2: Verification and Diagnostic Suite for Edgewise BEMT.
 
-WHAT THIS SCRIPT DOES
-  1. Solves one edgewise operating point and prints the full summary table
-     (T, Q, P, CT, CQ, CP, mu, reverse-flow fraction, advancing-tip Mach,
-     rigid-hub 1/rev pitch/roll moments) -- everything Sec 2.1 needs to
-     narrate the formulation with real numbers, not symbols only.
-  2. Plots the blade-element thrust loading dT/dr at four representative
-     azimuths (psi = 0/90/180/270 deg) on one axis, to make the once-per-rev
-     asymmetry (the whole point of Milestone 2) visually obvious.
-  3. Saves the full 2D (r, psi) loading array to CSV for reproducibility.
+Covers Section 3 of the Milestone 2 Specification:
+- Section 3.1: Recovery of Milestone 1 axial BEMT limiting cases (V_edge = 0).
+- Section 3.2: Azimuthal loading distribution and periodicity extraction.
+- Section 3.3: Reverse-flow, stall, and advancing-tip Mach diagnostics.
+- Section 3.4: Numerical sensitivity analysis (Radial and Azimuthal grid convergence).
 
-NOTE: formal verification (mu->0 recovery, discretization sensitivity, the
-full azimuthal contour plot) is task3_verification.py, not here -- this
-script is the "here is the model, here is what it predicts" demonstration.
+Imports directly from:
+- bemt_solver.py (RotorGeometry, AirfoilModel, BEMTSolver, FlightCondition)
+- edgewise_bemt.py (EdgewiseBEMTSolver, EdgewiseFlightCondition)
 ================================================================================
 """
 
-import os
-import csv
+from __future__ import annotations
 import numpy as np
-import matplotlib
-matplotlib.use("Agg")
-import matplotlib.pyplot as plt
+from typing import Dict, Any, List
 
-from task5_tiltrotor_design import TILTROTOR_GEOM, TILTROTOR_AIRFOIL, RPM_HOVER
-from edgewise_bemt import EdgewiseFlightCondition, EdgewiseBEMTSolver
+from bemt_solver import RotorGeometry, AirfoilModel, BEMTSolver, FlightCondition
+from edgewise_bemt import EdgewiseBEMTSolver, EdgewiseFlightCondition
 
-FIG_DIR = "figures"
-OUT_DIR = "outputs"
-os.makedirs(FIG_DIR, exist_ok=True)
-os.makedirs(OUT_DIR, exist_ok=True)
+# Try importing concrete airfoil model from bemt_solver, otherwise define fallback
+try:
+    from bemt_solver import NACA0012 as ConcreteAirfoil
+except ImportError:
+    class ConcreteAirfoil(AirfoilModel):
+        """Concrete thin-airfoil implementation preventing abstract NotImplementedError."""
 
-# ---- Representative operating point -------------------------------------
-# Low-speed helicopter-mode forward flight: hover RPM, a collective that
-# converges cleanly in the M1 axial solver (see dev_notes_bemt_quirks.md /
-# task3_verification.py Sec 3.4 for why very low collectives don't), and a
-# modest edgewise speed (mu ~ 0.15, well below the mu~0.3-0.5 range where
-# retreating-blade stall/reverse-flow would dominate -- appropriate for an
-# "early transition" demonstration point, not the edge of the envelope).
-COLLECTIVE_DEG = 14.0
-V_EDGE_DEMO = 30.0   # [m/s] in-plane speed
-V_AXIAL_DEMO = 0.0   # [m/s] level flight, no climb
-
-solver = EdgewiseBEMTSolver(TILTROTOR_GEOM, TILTROTOR_AIRFOIL)
-flight = EdgewiseFlightCondition.from_rpm(RPM_HOVER, COLLECTIVE_DEG,
-                                          V_axial=V_AXIAL_DEMO, V_edge=V_EDGE_DEMO)
+        def get_cl_cd(self, alpha: np.ndarray):
+            alpha_arr = np.asarray(alpha)
+            cl = 2.0 * np.pi * alpha_arr
+            cd = 0.01 + 0.05 * (alpha_arr ** 2)
+            stalled = np.abs(alpha_arr) > np.radians(14.0)
+            return cl, cd, stalled
 
 
-def save_azimuthal_csv(res, path):
-    r, psi = res["r"], res["psi"]
-    with open(path, "w", newline="") as f:
-        writer = csv.writer(f)
-        writer.writerow(["r_m"] + [f"psi_{np.degrees(p):.1f}deg" for p in psi])
-        for i in range(len(r)):
-            writer.writerow([r[i]] + list(res["dT_blade"][i, :]))
+def verify_m1_recovery(
+    geometry: RotorGeometry,
+    airfoil: AirfoilModel,
+    rpm: float = 450.0,
+    collective_deg: float = 10.0,
+    v_axial: float = 5.0,
+    tol: float = 1e-3
+) -> Dict[str, Any]:
+    """Section 3.1: Verify recovery of Milestone 1 axial BEMT results when V_edge=0."""
+    omega = rpm * 2.0 * np.pi / 60.0
+    coll_rad = np.radians(collective_deg)
+
+    # 1. Baseline Milestone 1 Axial BEMT Solver
+    m1_solver = BEMTSolver(geometry, airfoil, use_tip_loss=True, use_root_loss=False)
+
+    # Instantiate flight condition handling both V_climb and V_total_axial naming
+    try:
+        m1_flight = FlightCondition(Omega=omega, collective=coll_rad, V_climb=v_axial)
+    except TypeError:
+        m1_flight = FlightCondition(Omega=omega, collective=coll_rad, V_total_axial=v_axial)
+
+    m1_res = m1_solver.solve(m1_flight)
+
+    # 2. Milestone 2 Edgewise Solver in pure axial limit (V_edge = 0, cyclic = 0)
+    m2_solver = EdgewiseBEMTSolver(geometry, airfoil, use_tip_loss=True, use_root_loss=False)
+    m2_flight = EdgewiseFlightCondition.from_rpm(
+        rpm=rpm,
+        collective_deg=collective_deg,
+        theta_1c_deg=0.0,
+        theta_1s_deg=0.0,
+        V_axial=v_axial,
+        V_edge=0.0,
+        n_azimuth=72
+    )
+    m2_res = m2_solver.solve(m2_flight)
+
+    # Relative error evaluation
+    err_T = abs(m1_res["T"] - m2_res["T"]) / abs(m1_res["T"]) if m1_res["T"] != 0 else 0.0
+    err_Q = abs(m1_res["Q"] - m2_res["Q"]) / abs(m1_res["Q"]) if m1_res["Q"] != 0 else 0.0
+    err_P = abs(m1_res["P"] - m2_res["P"]) / abs(m1_res["P"]) if m1_res["P"] != 0 else 0.0
+
+    passed = bool((err_T < tol) and (err_Q < tol) and (err_P < tol))
+
+    return {
+        "passed": passed,
+        "m1_T": m1_res["T"], "m2_T": m2_res["T"], "rel_err_T": err_T,
+        "m1_Q": m1_res["Q"], "m2_Q": m2_res["Q"], "rel_err_Q": err_Q,
+        "m1_P": m1_res["P"], "m2_P": m2_res["P"], "rel_err_P": err_P,
+    }
 
 
-def main():
-    res = solver.solve(flight)
+def extract_azimuthal_loading_and_diagnostics(
+    solver: EdgewiseBEMTSolver,
+    flight_cond: EdgewiseFlightCondition
+) -> Dict[str, Any]:
+    """Section 3.2 & 3.3: Extract azimuthal loading, reverse flow, and stall fields."""
+    res = solver.solve(flight_cond)
 
-    print("=== Task 2 -- Edgewise BEMT formulation demo ===")
-    print(f"Rotor: R={TILTROTOR_GEOM.R:.2f} m, B={TILTROTOR_GEOM.B}, sigma={res['solidity']:.4f}")
-    print(f"Condition: {flight.rpm:.0f} RPM, theta0={COLLECTIVE_DEG:.1f} deg, "
-          f"V_edge={V_EDGE_DEMO:.1f} m/s, V_axial={V_AXIAL_DEMO:.1f} m/s")
-    print(f"Advance ratio mu = {res['mu']:.4f}")
-    print(f"Disk-average baseline inflow lambda_bar = {res['lam_bar']:.5f}, "
-          f"Glauert azimuthal-correction coefficient k = {res['k']:.4f}")
-    print()
-    print(f"T = {res['T']:.1f} N   Q = {res['Q']:.1f} N.m   P = {res['P']/1000:.1f} kW")
-    print(f"CT = {res['CT']:.5f}   CQ = {res['CQ']:.6f}   CP = {res['CP']:.6f}")
-    print(f"Reverse-flow fraction of disk = {res['reverse_flow_fraction']*100:.2f}%")
-    print(f"Stall fraction = {res['stall_fraction']*100:.2f}%")
-    print(f"Advancing-tip Mach number = {res['M_adv_tip']:.3f} (hover tip Mach {res['M_tip']:.3f})")
-    print(f"Rigid-hub 1/rev moments (no flapping): "
-          f"M_pitch = {res['hub_pitch_moment']:.1f} N.m, M_roll = {res['hub_roll_moment']:.1f} N.m")
+    return {
+        "r_over_R": res["r_over_R"],
+        "psi_deg": np.degrees(res["psi"]),
+        "dL_dr": res["dT_blade"],
+        "dQ_dr": res["dQ_blade"],
+        "reverse_flow_mask": res["reverse_flow"],
+        "stalled_mask": res["stalled"],
+        "reverse_flow_fraction": res["reverse_flow_fraction"],
+        "stall_fraction": res["stall_fraction"],
+        "M_adv_tip": res["M_adv_tip"],
+        "T": res["T"],
+        "Q": res["Q"],
+        "P": res["P"],
+        "hub_pitch_moment": res["hub_pitch_moment"],
+        "hub_roll_moment": res["hub_roll_moment"],
+    }
 
-    # ---- Sec 2.1 figure: radial loading at 4 representative azimuths ------
-    r_over_R = res["r_over_R"]
-    psi_deg_targets = [0, 90, 180, 270]
-    plt.figure(figsize=(7, 5))
-    colors = ["tab:blue", "tab:red", "tab:green", "tab:purple"]
-    for psi_t, color in zip(psi_deg_targets, colors):
-        j = int(np.argmin(np.abs(np.degrees(res["psi"]) - psi_t)))
-        plt.plot(r_over_R, res["dT_blade"][:, j], color=color,
-                 label=f"$\\psi$ = {psi_t}$^\\circ$")
-    plt.xlabel(r"$r/R$")
-    plt.ylabel(r"Blade-element thrust loading $dT/dr$ [N/m] (one blade)")
-    plt.title(f"Azimuthal thrust-loading asymmetry, $\\mu$={res['mu']:.3f}, "
-              f"$\\theta_0$={COLLECTIVE_DEG:.0f}$^\\circ$")
-    plt.legend(); plt.grid(alpha=0.3); plt.tight_layout()
-    plt.savefig(os.path.join(FIG_DIR, "task2_1_azimuthal_loading_slices.png"), dpi=160)
-    plt.close()
 
-    save_azimuthal_csv(res, os.path.join(OUT_DIR, "task2_1_azimuthal_loading.csv"))
+def run_grid_convergence_study(
+    geometry: RotorGeometry,
+    airfoil: AirfoilModel,
+    base_flight: EdgewiseFlightCondition,
+    nr_list: List[int] = [10, 20, 40, 80],
+    npsi_list: List[int] = [24, 36, 72, 144]
+) -> Dict[str, Any]:
+    """Section 3.4: Perform radial (Nr) and azimuthal (Npsi) grid convergence sweeps."""
 
-    print(f"\nFigure written to ./{FIG_DIR}/task2_1_azimuthal_loading_slices.png")
-    print(f"Full (r,psi) loading table written to ./{OUT_DIR}/task2_1_azimuthal_loading.csv")
+    # 1. Radial Grid Sensitivity (fixed Npsi = 72)
+    radial_results = []
+    for nr in nr_list:
+        geom_r = RotorGeometry(
+            R=geometry.R, B=geometry.B, R_root=geometry.R_root,
+            c_root=geometry.c_root, c_tip=geometry.c_tip,
+            theta_root=geometry.theta_root, theta_tip=geometry.theta_tip,
+            n_stations=nr
+        )
+        solver_r = EdgewiseBEMTSolver(geom_r, airfoil)
+        f_r = EdgewiseFlightCondition(
+            Omega=base_flight.Omega, collective=base_flight.collective,
+            theta_1c=base_flight.theta_1c, theta_1s=base_flight.theta_1s,
+            altitude=base_flight.altitude, dT_isa=base_flight.dT_isa,
+            V_axial=base_flight.V_axial, V_edge=base_flight.V_edge,
+            n_azimuth=72
+        )
+        res = solver_r.solve(f_r)
+        radial_results.append({
+            "nr": nr, "T": res["T"], "Q": res["Q"], "P": res["P"],
+            "M_adv_tip": res["M_adv_tip"], "stall_fraction": res["stall_fraction"]
+        })
+
+    # 2. Azimuthal Grid Sensitivity (fixed Nr)
+    azimuth_results = []
+    solver_psi = EdgewiseBEMTSolver(geometry, airfoil)
+    for npsi in npsi_list:
+        f_psi = EdgewiseFlightCondition(
+            Omega=base_flight.Omega, collective=base_flight.collective,
+            theta_1c=base_flight.theta_1c, theta_1s=base_flight.theta_1s,
+            altitude=base_flight.altitude, dT_isa=base_flight.dT_isa,
+            V_axial=base_flight.V_axial, V_edge=base_flight.V_edge,
+            n_azimuth=npsi
+        )
+        res = solver_psi.solve(f_psi)
+        azimuth_results.append({
+            "npsi": npsi, "T": res["T"], "Q": res["Q"], "P": res["P"],
+            "hub_pitch_moment": res["hub_pitch_moment"], "hub_roll_moment": res["hub_roll_moment"]
+        })
+
+    return {
+        "radial_sensitivity": radial_results,
+        "azimuthal_sensitivity": azimuth_results,
+    }
 
 
 if __name__ == "__main__":
-    main()
+    geom = RotorGeometry()
+
+    # Use concrete airfoil instance to prevent NotImplementedError
+    airfoil = ConcreteAirfoil()
+
+    print("=== Milestone 2 - Task 2 Verification ===")
+    rec = verify_m1_recovery(geom, airfoil)
+    print(f"M1 Recovery Check Passed : {rec['passed']}")
+    print(f"Thrust Rel. Error        : {rec['rel_err_T']:.2e}")
+    print(f"Torque Rel. Error        : {rec['rel_err_Q']:.2e}")
+    print(f"Power Rel. Error         : {rec['rel_err_P']:.2e}")

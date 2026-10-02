@@ -1,0 +1,16 @@
+{
+  "helicopter_like": {
+    "nacelle_angle_deg": 90.0,
+    "airspeed_ms": 20.0,
+    "rpm": 750.0,
+    "collective_deg": 14.0,
+    "description": "helicopter-like edgewise flight"
+  },
+  "intermediate_conversion": {
+    "nacelle_angle_deg": 45.0,
+    "airspeed_ms": 10.0,
+    "rpm": 750.0,
+    "collective_deg": 14.0,
+    "description": "intermediate conversion"
+  }
+}

@@ -1,0 +1,14 @@
+Quantity,Value,Units,Note
+Gross mass,3000.0,kg,1950 empty + 550 payload + 500 fuel
+Empty mass,1950.0,kg,design estimate
+Payload,550.0,kg,maximum payload
+Fuel,500.0,kg,10% reserve
+CG,"(0.00,0.00,0.00)",m,body axes
+Nacelle angle,0.0–90.0,deg,airplane→helicopter
+Nacelle rate,5.0,deg/s,example transition rate
+Rotor RPM,620–780,RPM,hard operating range
+Collective,2–35,deg,bounded trim input
+Cyclic,±8,deg,both cyclic terms
+Elevator,±15,deg,bounded trim input
+Rudder,±15,deg,bounded trim input
+Aileron,±10,deg,bounded trim input

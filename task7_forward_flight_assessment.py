@@ -20,12 +20,16 @@ This is flagged explicitly rather than hidden.
 ================================================================================
 """
 
+from __future__ import annotations
 import os
+import csv
+import warnings
 import numpy as np
 import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
+# BEMT and design imports
 from bemt_solver import FlightCondition
 from task5_tiltrotor_design import (
     TILTROTOR_GEOM, RPM_CRUISE, COLLECTIVE_RANGE_CRUISE_DEG, build_solver, AIRCRAFT,
@@ -44,13 +48,23 @@ N_REV_PER_S = RPM_CRUISE / 60.0
 DIAMETER = 2.0 * TILTROTOR_GEOM.R
 
 
-def solve_axial(collective_deg, J, altitude=CRUISE_ALTITUDE_M):
+def solve_axial(collective_deg: float, J: float, altitude: float = CRUISE_ALTITUDE_M) -> tuple[dict, float, float]:
+    """Solves axial forward flight (propeller mode) for a given collective and advance ratio J."""
     V = J * N_REV_PER_S * DIAMETER
-    flight = FlightCondition(Omega=RPM_CRUISE * 2.0 * np.pi / 60.0,
-                              collective=np.radians(collective_deg),
-                              altitude=altitude, dT_isa=0.0, V_axial=V)
-    res = SOLVER.solve(flight)  # Fixed: removed verbose=False
-    eta_p = (res["T"] * V / res["P"]) if res["P"] > 0 else float("nan")
+    omega = RPM_CRUISE * 2.0 * np.pi / 60.0
+
+    try:
+        flight = FlightCondition.from_rpm(RPM_CRUISE, collective_deg, altitude=altitude, dT_isa=0.0, V_axial=V)
+    except (AttributeError, TypeError):
+        flight = FlightCondition(Omega=omega, collective=np.radians(collective_deg), altitude=altitude, dT_isa=0.0, V_axial=V)
+
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", UserWarning)
+        res = SOLVER.solve(flight)
+
+    P_val = res.get("P", 0.0)
+    T_val = res.get("T", 0.0)
+    eta_p = (T_val * V / P_val) if P_val > 0 else float("nan")
     return res, V, eta_p
 
 
@@ -67,31 +81,49 @@ def forward_flight_maps():
         CT_list, CP_list, eta_list, stall_list = [], [], [], []
         for J in J_grid:
             res, V, eta_p = solve_axial(coll, J)
-            CT_list.append(res["CT"])
-            CP_list.append(res["CP"])
+
+            ct_val = res.get("CT", 0.0)
+            cp_val = res.get("CP", 0.0)
+            stall_frac = res.get("stall_fraction", 0.0)
+            m_tip = res.get("M_tip", 0.0)
+
+            CT_list.append(ct_val)
+            CP_list.append(cp_val)
             eta_list.append(eta_p)
-            stall_list.append(res["stall_fraction"])
-            csv_rows.append((coll, J, V, res["T"], res["P"], res["CT"], res["CP"],
-                              eta_p, res["stall_fraction"], res["M_tip"]))
+            stall_list.append(stall_frac)
+
+            csv_rows.append((coll, J, V, res["T"], res["P"], ct_val, cp_val,
+                              eta_p, stall_frac, m_tip))
 
         axes[0].plot(J_grid, CT_list, "-o", ms=3, label=f"coll={coll:.0f} deg")
         axes[1].plot(J_grid, CP_list, "-o", ms=3, label=f"coll={coll:.0f} deg")
+
         eta_arr = np.array(eta_list)
         stall_arr = np.array(stall_list)
-        mask = (eta_arr > 0) & (stall_arr <= STALL_FRACTION_LIMIT)
+        mask = (eta_arr > 0) & (stall_arr <= STALL_FRACTION_LIMIT) & ~np.isnan(eta_arr)
+
         axes[2].plot(J_grid[mask], eta_arr[mask], "-o", ms=3, label=f"coll={coll:.0f} deg")
 
     axes[0].axhline(0, color="k", lw=0.5)
-    axes[0].set_xlabel("Advance ratio, J"); axes[0].set_ylabel(r"$C_T$")
-    axes[0].set_title("6.2 Thrust coefficient vs J"); axes[0].grid(alpha=0.3); axes[0].legend(fontsize=8)
+    axes[0].set_xlabel("Advance ratio, J")
+    axes[0].set_ylabel(r"$C_T$")
+    axes[0].set_title("6.2 Thrust coefficient vs J")
+    axes[0].grid(alpha=0.3)
+    axes[0].legend(fontsize=8)
 
     axes[1].axhline(0, color="k", lw=0.5)
-    axes[1].set_xlabel("Advance ratio, J"); axes[1].set_ylabel(r"$C_P$")
-    axes[1].set_title("6.2 Power coefficient vs J"); axes[1].grid(alpha=0.3); axes[1].legend(fontsize=8)
+    axes[1].set_xlabel("Advance ratio, J")
+    axes[1].set_ylabel(r"$C_P$")
+    axes[1].set_title("6.2 Power coefficient vs J")
+    axes[1].grid(alpha=0.3)
+    axes[1].legend(fontsize=8)
 
-    axes[2].set_xlabel("Advance ratio, J"); axes[2].set_ylabel(r"Propulsive efficiency, $\eta_p$")
+    axes[2].set_xlabel("Advance ratio, J")
+    axes[2].set_ylabel(r"Propulsive efficiency, $\eta_p$")
     axes[2].set_title("6.2 Propulsive efficiency vs J\n(masked to feasible: T>0, stall<=5%)")
-    axes[2].grid(alpha=0.3); axes[2].legend(fontsize=8); axes[2].set_ylim(0, 1)
+    axes[2].grid(alpha=0.3)
+    axes[2].legend(fontsize=8)
+    axes[2].set_ylim(0, 1)
 
     fig.suptitle(f"Task 7 -- Axial forward-flight (propeller-mode) maps, "
                  f"RPM={RPM_CRUISE:.0f}, altitude={CRUISE_ALTITUDE_M:.0f} m")
@@ -99,10 +131,13 @@ def forward_flight_maps():
     fig.savefig(os.path.join(FIG_DIR, "task7_forward_flight_maps.png"), dpi=160)
     plt.close(fig)
 
-    with open(os.path.join(OUT_DIR, "task7_forward_flight_sweep.csv"), "w") as f:
-        f.write("collective_deg,J,V_ms,T_N,P_W,CT,CP,eta_p,stall_fraction,M_tip\n")
+    csv_path = os.path.join(OUT_DIR, "task7_forward_flight_sweep.csv")
+    with open(csv_path, "w", newline="") as f:
+        writer = csv.writer(f)
+        writer.writerow(["collective_deg", "J", "V_ms", "T_N", "P_W", "CT", "CP", "eta_p", "stall_fraction", "M_tip"])
         for r in csv_rows:
-            f.write(",".join(f"{v:.6g}" for v in r) + "\n")
+            writer.writerow(r)
+
     print(f"Forward-flight maps written to {FIG_DIR}/task7_forward_flight_maps.png")
     return csv_rows
 
@@ -110,31 +145,48 @@ def forward_flight_maps():
 # ================================================================================
 # 6.2(b) Blade AoA radial distribution at a representative cruise-like point
 # ================================================================================
-def blade_aoa_distribution(collective_deg=30.0, J=0.5):
+def blade_aoa_distribution(collective_deg: float = 30.0, J: float = 0.5):
     res, V, eta_p = solve_axial(collective_deg, J)
+
+    r_over_R = res.get("r_over_R", np.linspace(0.1, 1.0, len(res.get("alpha", [0]))))
+    alpha_raw = res.get("alpha_deg", res.get("alpha", np.zeros_like(r_over_R)))
+
+    if np.all(np.abs(alpha_raw) < 2.0 * np.pi):
+        alpha_deg = np.degrees(alpha_raw)
+    else:
+        alpha_deg = alpha_raw
+
     plt.figure(figsize=(6.5, 4.5))
-    plt.plot(res["r_over_R"], res["alpha_deg"], "-", color="tab:blue")
+    plt.plot(r_over_R, alpha_deg, "-", color="tab:blue")
     plt.axhline(12.0, color="k", ls="--", lw=1, label="adopted stall AoA (+/-12 deg)")
     plt.axhline(-12.0, color="k", ls="--", lw=1)
-    plt.xlabel("r/R"); plt.ylabel("Local blade angle of attack [deg]")
+    plt.xlabel("r/R")
+    plt.ylabel("Local blade angle of attack [deg]")
     plt.title(f"Task 7 -- Blade AoA distribution, collective={collective_deg:.0f} deg, "
               f"J={J:.2f}, V={V:.1f} m/s")
-    plt.grid(alpha=0.3); plt.legend()
+    plt.grid(alpha=0.3)
+    plt.legend()
     plt.tight_layout()
     plt.savefig(os.path.join(FIG_DIR, "task7_blade_aoa_distribution.png"), dpi=160)
     plt.close()
+
+    stall_frac = res.get("stall_fraction", 0.0)
     print(f"Blade AoA distribution written to {FIG_DIR}/task7_blade_aoa_distribution.png "
-          f"(T={res['T']:.0f} N, stall_frac={res['stall_fraction']:.2f})")
+          f"(T={res['T']:.0f} N, stall_frac={stall_frac:.2f})")
 
 
 # ================================================================================
 # 6.2(c) Feasible operating envelope + selected cruise point
 # ================================================================================
-def select_cruise_point(csv_rows):
-    feasible = [r for r in csv_rows if r[3] > 0 and r[7] == r[7] and r[8] <= STALL_FRACTION_LIMIT]
+def select_cruise_point(csv_rows: list[tuple]):
+    feasible = [
+        r for r in csv_rows
+        if r[3] > 0 and not np.isnan(r[7]) and r[8] <= STALL_FRACTION_LIMIT
+    ]
     if not feasible:
         print("No feasible (T>0, stall<=limit) point found in the sweep grid!")
         return None
+
     best = max(feasible, key=lambda r: r[7])   # r[7] = eta_p
     coll, J, V, T, P, CT, CP, eta_p, stall_frac, M_tip = best
 
@@ -158,19 +210,26 @@ def select_cruise_point(csv_rows):
     )
     print(gap_note)
 
-    with open(os.path.join(OUT_DIR, "task7_selected_cruise_point.csv"), "w") as f:
-        f.write("collective_deg,J,V_ms,V_kt,T_N,P_W,eta_p,stall_fraction,M_tip\n")
-        f.write(f"{coll},{J},{V},{V*1.94384},{T},{P},{eta_p},{stall_frac},{M_tip}\n")
-    with open(os.path.join(OUT_DIR, "task7_notes_cruise_gap.md"), "w") as f:
+    csv_path = os.path.join(OUT_DIR, "task7_selected_cruise_point.csv")
+    with open(csv_path, "w", newline="") as f:
+        writer = csv.writer(f)
+        writer.writerow(["collective_deg", "J", "V_ms", "V_kt", "T_N", "P_W", "eta_p", "stall_fraction", "M_tip"])
+        writer.writerow([coll, J, V, V*1.94384, T, P, eta_p, stall_frac, M_tip])
+
+    md_path = os.path.join(OUT_DIR, "task7_notes_cruise_gap.md")
+    with open(md_path, "w") as f:
         f.write("# Task 7 technical note: cruise-speed requirement vs. demonstrated capability\n\n")
         f.write(gap_note + "\n")
 
-    return dict(collective_deg=coll, J=J, V_ms=V, T_N=T, P_W=P, eta_p=eta_p,
-                stall_fraction=stall_frac, M_tip=M_tip)
+    return dict(
+        collective_deg=coll, J=J, V_ms=V, T_N=T, P_W=P, eta_p=eta_p,
+        stall_fraction=stall_frac, M_tip=M_tip
+    )
 
 
 if __name__ == "__main__":
     csv_rows = forward_flight_maps()
     blade_aoa_distribution(collective_deg=30.0, J=0.5)
     select_cruise_point(csv_rows)
-    print(f"\nAll figures in ./{FIG_DIR}/task7_*.png ; all tables in ./{OUT_DIR}/task7_*.csv")
+    print(f"\nAll figures written to ./{FIG_DIR}/task7_*.png")
+    print(f"All outputs written to ./{OUT_DIR}/task7_*.csv")

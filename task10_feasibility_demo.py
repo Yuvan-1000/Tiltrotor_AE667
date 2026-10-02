@@ -13,12 +13,15 @@ and why.
 ================================================================================
 """
 
+from __future__ import annotations
 import os
+import csv
 import warnings
 import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
+# Mission planner and tiltrotor design imports
 from mission_planner import MissionPlanner
 from task5_tiltrotor_design import AIRCRAFT
 
@@ -28,6 +31,15 @@ FIG_DIR = "figures"
 OUT_DIR = "outputs"
 os.makedirs(FIG_DIR, exist_ok=True)
 os.makedirs(OUT_DIR, exist_ok=True)
+
+
+def _get_fail_attr(fail_obj, attr: str, default=None):
+    """Safely extracts attributes from a failure object or dictionary."""
+    if fail_obj is None:
+        return default
+    if isinstance(fail_obj, dict):
+        return fail_obj.get(attr, default)
+    return getattr(fail_obj, attr, default)
 
 
 # ================================================================================
@@ -100,12 +112,17 @@ def infeasible_mission():
     print(f"picks up an oversized +900 kg payload mid-route (-> 3520 kg gross, above the")
     print(f"3000 kg design MTOW and the 3205 kg Task-6 max-hover-GW-at-SL)")
     print(f"Completed: {summary['completed']}")
-    if summary["failure"]:
-        f = summary["failure"]
+
+    failure_info = summary.get("failure") or getattr(mp, "failure", None)
+    if failure_info:
+        seg_name = _get_fail_attr(failure_info, "segment") or _get_fail_attr(failure_info, "segment_label", "unknown")
+        fail_time = _get_fail_attr(failure_info, "time_s", 0.0)
+        reason_str = _get_fail_attr(failure_info, "reason", "unknown constraint violation")
+
         print(f"FIRST VIOLATED CONSTRAINT:")
-        print(f"  Segment : {f['segment']}")
-        print(f"  Time    : {f['time_s']:.1f} s ({f['time_s']/60:.1f} min)")
-        print(f"  Reason  : {f['reason']}")
+        print(f"  Segment : {seg_name}")
+        print(f"  Time    : {fail_time:.1f} s ({fail_time/60:.1f} min)")
+        print(f"  Reason  : {reason_str}")
     else:
         print("(Unexpectedly completed -- adjust the overweight test case.)")
 
@@ -117,24 +134,30 @@ def infeasible_mission():
 # ================================================================================
 # Plot & log helpers
 # ================================================================================
-def _plot_mission(mp, title, fname_prefix):
-    t_min = [row["t_s"] / 60.0 for row in mp.log if "gross_weight_kg" in row]
+def _plot_mission(mp, title: str, fname_prefix: str):
+    t_min = [row["t_s"] / 60.0 for row in mp.log if "gross_weight_kg" in row and "t_s" in row]
     gw = [row["gross_weight_kg"] for row in mp.log if "gross_weight_kg" in row]
-    alt = [row.get("altitude_m", None) for row in mp.log if "gross_weight_kg" in row]
+    alt = [row.get("altitude_m", 0.0) for row in mp.log if "gross_weight_kg" in row]
 
     fig, axes = plt.subplots(1, 2, figsize=(11, 4.2))
     axes[0].plot(t_min, gw, "-o", ms=3, color="tab:blue")
-    axes[0].set_xlabel("Time [min]"); axes[0].set_ylabel("Gross weight [kg]")
-    axes[0].set_title("Gross weight vs time"); axes[0].grid(alpha=0.3)
+    axes[0].set_xlabel("Time [min]")
+    axes[0].set_ylabel("Gross weight [kg]")
+    axes[0].set_title("Gross weight vs time")
+    axes[0].grid(alpha=0.3)
 
     axes[1].plot(t_min, alt, "-o", ms=3, color="tab:orange")
-    axes[1].set_xlabel("Time [min]"); axes[1].set_ylabel("Altitude [m]")
-    axes[1].set_title("Altitude profile"); axes[1].grid(alpha=0.3)
+    axes[1].set_xlabel("Time [min]")
+    axes[1].set_ylabel("Altitude [m]")
+    axes[1].set_title("Altitude profile")
+    axes[1].grid(alpha=0.3)
 
     if mp.failed:
-        axes[0].axvline(mp.failure.time_s / 60.0, color="red", ls="--", lw=1.5, label="mission failure")
-        axes[1].axvline(mp.failure.time_s / 60.0, color="red", ls="--", lw=1.5, label="mission failure")
-        axes[0].legend(); axes[1].legend()
+        fail_time = _get_fail_attr(mp.failure, "time_s", 0.0) / 60.0
+        axes[0].axvline(fail_time, color="red", ls="--", lw=1.5, label="mission failure")
+        axes[1].axvline(fail_time, color="red", ls="--", lw=1.5, label="mission failure")
+        axes[0].legend()
+        axes[1].legend()
 
     fig.suptitle(f"Task 10 -- {title}")
     fig.tight_layout()
@@ -142,15 +165,21 @@ def _plot_mission(mp, title, fname_prefix):
     plt.close(fig)
 
 
-def _write_log_csv(mp, fname):
+def _write_log_csv(mp, fname: str):
+    if not mp.log:
+        return
+
     keys = set()
     for row in mp.log:
         keys.update(row.keys())
-    keys = sorted(keys)
-    with open(os.path.join(OUT_DIR, fname), "w") as f:
-        f.write(",".join(keys) + "\n")
+    sorted_keys = sorted(keys)
+
+    filepath = os.path.join(OUT_DIR, fname)
+    with open(filepath, "w", newline="") as f:
+        writer = csv.DictWriter(f, fieldnames=sorted_keys)
+        writer.writeheader()
         for row in mp.log:
-            f.write(",".join(str(row.get(k, "")) for k in keys) + "\n")
+            writer.writerow({k: row.get(k, "") for k in sorted_keys})
 
 
 if __name__ == "__main__":
@@ -167,10 +196,15 @@ if __name__ == "__main__":
                 f"(reserve={mpA.reserve_fuel_kg:.1f} kg)\n\n")
         f.write("## Mission B (deliberately infeasible)\n")
         f.write(f"- Completed: {summaryB['completed']}\n")
-        if summaryB["failure"]:
-            fb = summaryB["failure"]
-            f.write(f"- First violated constraint: segment='{fb['segment']}', "
-                    f"time={fb['time_s']:.1f} s, reason: {fb['reason']}\n")
+
+        failure_info = summaryB.get("failure") or getattr(mpB, "failure", None)
+        if failure_info:
+            seg_name = _get_fail_attr(failure_info, "segment") or _get_fail_attr(failure_info, "segment_label", "unknown")
+            fail_time = _get_fail_attr(failure_info, "time_s", 0.0)
+            reason_str = _get_fail_attr(failure_info, "reason", "unknown constraint violation")
+
+            f.write(f"- First violated constraint: segment='{seg_name}', "
+                    f"time={fail_time:.1f} s, reason: {reason_str}\n")
 
     print(f"\nPlots written to {FIG_DIR}/task10_mission[AB]_*.png")
     print(f"Logs written to {OUT_DIR}/task10_mission[AB]_*_log.csv")

@@ -10,9 +10,35 @@ whole report is internally consistent (one rotor, one aircraft, everywhere).
 ================================================================================
 """
 
+from __future__ import annotations
 import os
+import csv
 import numpy as np
-from bemt_solver import RotorGeometry, LinearAirfoil, FlightCondition, BEMTSolver
+
+# Primary BEMT imports with fallback handling
+from bemt_solver import RotorGeometry, FlightCondition, BEMTSolver, AirfoilModel
+
+try:
+    from bemt_solver import LinearAirfoil
+except ImportError:
+    class LinearAirfoil(AirfoilModel):
+        """Fallback linear Cl / parabolic Cd airfoil model."""
+        def __init__(self, a0: float = 5.73, cd_min: float = 0.0090, eps: float = 0.60, alpha_stall: float = np.radians(12.0)):
+            self.a0 = a0
+            self.cd_min = cd_min
+            self.eps = eps
+            self.alpha_stall = alpha_stall
+
+        def get_cl_cd(self, alpha: np.ndarray):
+            alpha_arr = np.asarray(alpha)
+            stalled = np.abs(alpha_arr) > self.alpha_stall
+            cl = np.where(~stalled, self.a0 * alpha_arr, self.a0 * self.alpha_stall * np.sign(alpha_arr))
+            cd = self.cd_min + self.eps * (alpha_arr ** 2)
+            return cl, cd, stalled
+
+
+OUT_DIR = "outputs"
+os.makedirs(OUT_DIR, exist_ok=True)
 
 # ================================================================================
 # ROTOR GEOMETRY
@@ -69,18 +95,24 @@ AIRCRAFT = dict(
 )
 
 
-def build_solver(use_root_loss=False, use_compressibility=False):
-    return BEMTSolver(TILTROTOR_GEOM, TILTROTOR_AIRFOIL,
-                      use_tip_loss=True, use_root_loss=use_root_loss,
-                      use_compressibility=use_compressibility)
+def build_solver(use_root_loss: bool = False, use_compressibility: bool = False) -> BEMTSolver:
+    """Instantiates a BEMTSolver configured with the single-source-of-truth tiltrotor geometry."""
+    kwargs = {"use_tip_loss": True}
+    if "use_root_loss" in BEMTSolver.__init__.__code__.co_varnames:
+        kwargs["use_root_loss"] = use_root_loss
+    if "use_compressibility" in BEMTSolver.__init__.__code__.co_varnames:
+        kwargs["use_compressibility"] = use_compressibility
+
+    return BEMTSolver(TILTROTOR_GEOM, TILTROTOR_AIRFOIL, **kwargs)
 
 
-def design_summary():
+def design_summary() -> list[tuple[str, str, str, str]]:
+    """Generates an itemized summary table of the tiltrotor design parameters."""
     geom = TILTROTOR_GEOM
-    sigma = geom.solidity()
-    A_disk = np.pi * geom.R ** 2
-    disk_loading_per_rotor = (AIRCRAFT["gross_weight_kg"] / AIRCRAFT["n_rotors"]
-                               * 9.80665 / A_disk)   # N/m^2
+    sigma = geom.solidity() if callable(getattr(geom, "solidity", None)) else getattr(geom, "solidity", 0.0)
+    A_disk = np.pi * (geom.R ** 2)
+    disk_loading_per_rotor = (AIRCRAFT["gross_weight_kg"] / AIRCRAFT["n_rotors"] * 9.80665) / A_disk   # N/m^2
+
     Vtip_hover = RPM_HOVER * 2.0 * np.pi / 60.0 * geom.R
     Vtip_cruise = RPM_CRUISE * 2.0 * np.pi / 60.0 * geom.R
     a_sound_sl = 340.3
@@ -88,15 +120,13 @@ def design_summary():
     M_tip_cruise = Vtip_cruise / a_sound_sl
 
     rows = [
-        ("Airfoil model", "Linear Cl-alpha / parabolic Cd (documented assumption)", "-",
-         "a0=5.73/rad, cd_min=0.0090, eps=0.60; see module docstring"),
+        ("Airfoil model", "Linear Cl-alpha / parabolic Cd", "-", "a0=5.73/rad, cd_min=0.0090, eps=0.60; see module docstring"),
         ("Radius, R", f"{geom.R:.2f}", "m", "sized for disk loading ~ real tiltrotors"),
         ("Root cutout", f"{geom.r_root:.2f}", "m", "hub / pitch-bearing / tilt-mechanism allowance"),
         ("Number of blades, B", f"{geom.B}", "-", "matches XV-15/V-22 practice"),
         ("Root chord", f"{geom.chord_root:.3f}", "m", "sets solidity"),
         ("Taper ratio", f"{geom.taper_ratio:.2f}", "-", f"tip chord = {geom.chord_root * geom.taper_ratio:.3f} m"),
-        ("Twist (linear)", f"{np.degrees(geom.twist_root):.1f} to {np.degrees(geom.twist_tip):.1f}", "deg",
-         "moderate washout (more than helicopter, less than full tiltrotor-class)"),
+        ("Twist (linear)", f"{np.degrees(geom.twist_root):.1f} to {np.degrees(geom.twist_tip):.1f}", "deg", "moderate washout"),
         ("Solidity, sigma", f"{sigma:.4f}", "-", "cf. XV-15 sigma=0.089-0.10"),
         ("RPM (hover / helicopter mode)", f"{RPM_HOVER:.0f}", "RPM", "sized for M_tip~0.6 hover"),
         ("RPM (cruise / airplane mode)", f"{RPM_CRUISE:.0f}", "RPM", "2-speed drive, 87% of hover Nr"),
@@ -127,9 +157,11 @@ if __name__ == "__main__":
     for r in rows:
         print(f"{r[0]:<{width0}}  {r[1]:>18} {r[2]:<8} | {r[3]}")
 
-    os.makedirs("outputs", exist_ok=True)
-    with open("outputs/task5_rotor_design_table.csv", "w") as f:
-        f.write("Parameter,Value,Units,Constraint_or_rationale\n")
+    csv_path = os.path.join(OUT_DIR, "task5_rotor_design_table.csv")
+    with open(csv_path, "w", newline="") as f:
+        writer = csv.writer(f)
+        writer.writerow(["Parameter", "Value", "Units", "Constraint_or_rationale"])
         for r in rows:
-            f.write(f'"{r[0]}","{r[1]}","{r[2]}","{r[3]}"\n')
-    print("\nDesign table written to outputs/task5_rotor_design_table.csv")
+            writer.writerow(r)
+
+    print(f"\nDesign table written to {csv_path}")

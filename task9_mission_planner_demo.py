@@ -14,13 +14,16 @@ Runs mission_planner.py through:
 ================================================================================
 """
 
+from __future__ import annotations
 import os
+import csv
 import warnings
 import numpy as np
 import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
+# Mission planner and tiltrotor design imports
 from mission_planner import (
     MissionPlanner, _solve_for_thrust, power_available_kW,
     G, CRUISE_L_OVER_D,
@@ -38,10 +41,19 @@ os.makedirs(FIG_DIR, exist_ok=True)
 os.makedirs(OUT_DIR, exist_ok=True)
 
 
+def _get_fail_attr(fail_obj, attr: str, default=None):
+    """Safely extracts attributes from a failure object or dictionary."""
+    if fail_obj is None:
+        return default
+    if isinstance(fail_obj, dict):
+        return fail_obj.get(attr, default)
+    return getattr(fail_obj, attr, default)
+
+
 # ================================================================================
 # 7.1 Implementation verification
 # ================================================================================
-def verification_tests():
+def verification_tests() -> list[tuple[str, str, bool, str]]:
     results = []
 
     # (1) segment sequencing + mass continuity across hover -> climb -> cruise
@@ -51,14 +63,23 @@ def verification_tests():
         {"type": "climb", "target_altitude_m": 300.0, "climb_rate_ms": 1.5},
         {"type": "cruise", "distance_km": 5.0, "altitude_m": 300.0, "airspeed_ms": 30.0},
     ])
-    seq = [row["segment"] for row in mp.log]
-    seq_ok = seq[0] == "hover" and "climb" in seq and seq[-1] == "cruise"
-    mass_continuous = all(mp.log[i]["gross_weight_kg"] >= mp.log[i + 1]["gross_weight_kg"] - 1e-6
-                          for i in range(len(mp.log) - 1) if "gross_weight_kg" in mp.log[i + 1])
-    results.append(("Segment sequencing", "hover->climb->cruise order preserved in log",
-                     seq_ok, f"log order: {seq[0]} ... {seq[-1]}"))
-    results.append(("Mass continuity", "gross weight strictly non-increasing (fuel-burn only)",
-                     mass_continuous, "checked every logged step"))
+    seq = [row["segment"] for row in mp.log if "segment" in row]
+    seq_ok = len(seq) >= 3 and seq[0] == "hover" and "climb" in seq and seq[-1] == "cruise"
+
+    mass_continuous = all(
+        mp.log[i]["gross_weight_kg"] >= mp.log[i + 1]["gross_weight_kg"] - 1e-6
+        for i in range(len(mp.log) - 1)
+        if "gross_weight_kg" in mp.log[i] and "gross_weight_kg" in mp.log[i + 1]
+    )
+
+    results.append((
+        "Segment sequencing", "hover->climb->cruise order preserved in log",
+        seq_ok, f"log order: {seq[0] if seq else 'N/A'} ... {seq[-1] if seq else 'N/A'}"
+    ))
+    results.append((
+        "Mass continuity", "gross weight strictly non-increasing (fuel-burn only)",
+        mass_continuous, "checked every logged step"
+    ))
 
     # (2) payload pickup / drop changes mass instantaneously, fuel unaffected
     mp2 = MissionPlanner(gross_weight_kg=2600.0, fuel_kg=400.0, dt_s=30.0)
@@ -69,66 +90,101 @@ def verification_tests():
                  and abs(mp2.state.fuel_kg - fuel_before) < 1e-9)
     mp2.payload_event(-350.0)
     drop_ok = abs(mp2.state.gross_weight_kg - (gw_before + 200.0 - 350.0)) < 1e-9
-    results.append(("Payload pickup", "+200 kg changes GW, not fuel", pickup_ok,
-                     f"GW {gw_before:.0f}->{gw_before+200:.0f} kg"))
-    results.append(("Payload drop", "-350 kg changes GW, not fuel", drop_ok,
-                     f"GW ->{gw_before+200-350:.0f} kg"))
+
+    results.append((
+        "Payload pickup", "+200 kg changes GW, not fuel", pickup_ok,
+        f"GW {gw_before:.0f}->{gw_before+200:.0f} kg"
+    ))
+    results.append((
+        "Payload drop", "-350 kg changes GW, not fuel", drop_ok,
+        f"GW ->{gw_before+200-350:.0f} kg"
+    ))
 
     # (3) fuel update: fuel strictly decreases during a powered hover segment
     mp3 = MissionPlanner(gross_weight_kg=2600.0, fuel_kg=400.0, dt_s=30.0)
     mp3.hover(duration_s=300.0, altitude_m=0.0)
-    fuel_series = [row["fuel_kg"] for row in mp3.log]
-    fuel_decreasing = all(fuel_series[i] > fuel_series[i + 1] for i in range(len(fuel_series) - 1))
-    results.append(("Fuel update", "fuel strictly decreases each step of a powered segment",
-                     fuel_decreasing, f"{fuel_series[0]:.2f} -> {fuel_series[-1]:.2f} kg over 300 s"))
+    fuel_series = [row["fuel_kg"] for row in mp3.log if "fuel_kg" in row]
+    fuel_decreasing = len(fuel_series) > 1 and all(fuel_series[i] > fuel_series[i + 1] for i in range(len(fuel_series) - 1))
+
+    results.append((
+        "Fuel update", "fuel strictly decreases each step of a powered segment",
+        fuel_decreasing,
+        f"{fuel_series[0]:.2f} -> {fuel_series[-1]:.2f} kg over 300 s" if fuel_series else "No fuel log"
+    ))
 
     # (4) atmospheric variation: power available drops with altitude
     P0 = power_available_kW(0.0)
     P3000 = power_available_kW(3000.0)
     atmo_ok = P3000 < P0
-    results.append(("Atmospheric variation", "power available decreases with altitude",
-                     atmo_ok, f"P_avail(0m)={P0:.0f} kW, P_avail(3000m)={P3000:.0f} kW"))
+    results.append((
+        "Atmospheric variation", "power available decreases with altitude",
+        atmo_ok, f"P_avail(0m)={P0:.0f} kW, P_avail(3000m)={P3000:.0f} kW"
+    ))
 
     # (5) wind treatment: tailwind reduces cruise time for the same distance
     mp_tail = MissionPlanner(gross_weight_kg=2600.0, fuel_kg=400.0, dt_s=30.0, wind_ms=+10.0)
     mp_tail.cruise(distance_km=10.0, altitude_m=1000.0, airspeed_ms=22.0)
     mp_head = MissionPlanner(gross_weight_kg=2600.0, fuel_kg=400.0, dt_s=30.0, wind_ms=-10.0)
     mp_head.cruise(distance_km=10.0, altitude_m=1000.0, airspeed_ms=22.0)
-    wind_ok = (not mp_tail.failed) and (not mp_head.failed) and mp_tail.state.time_s < mp_head.state.time_s
-    results.append(("Wind treatment", "tailwind gives shorter time-to-distance than headwind",
-                     wind_ok, f"tailwind t={mp_tail.state.time_s:.0f}s, headwind t={mp_head.state.time_s:.0f}s"))
+
+    wind_ok = (not mp_tail.failed) and (not mp_head.failed) and (mp_tail.state.time_s < mp_head.state.time_s)
+    results.append((
+        "Wind treatment", "tailwind gives shorter time-to-distance than headwind",
+        wind_ok, f"tailwind t={mp_tail.state.time_s:.0f}s, headwind t={mp_head.state.time_s:.0f}s"
+    ))
 
     # (6) reserve-fuel accounting: mission halts at/above reserve level
     mp4 = MissionPlanner(gross_weight_kg=2400.0, fuel_kg=60.0, dt_s=30.0)
     mp4.hover(duration_s=3600.0, altitude_m=0.0)
     reserve_ok = mp4.state.fuel_kg <= mp4.reserve_fuel_kg + 1e-6 and mp4.failed
-    results.append(("Reserve-fuel accounting", "mission stops at/above reserve, flags failure",
-                     reserve_ok, f"stopped at fuel={mp4.state.fuel_kg:.1f} kg, reserve={mp4.reserve_fuel_kg:.1f} kg"))
+    results.append((
+        "Reserve-fuel accounting", "mission stops at/above reserve, flags failure",
+        reserve_ok, f"stopped at fuel={mp4.state.fuel_kg:.1f} kg, reserve={mp4.reserve_fuel_kg:.1f} kg"
+    ))
 
     # (7) power-required vs power-available calculation sanity
-    theta0, res = _solve_for_thrust(AIRCRAFT["gross_weight_kg"] * G / AIRCRAFT["n_rotors"],
-                                     0.0, 0.0, RPM_HOVER, COLLECTIVE_RANGE_HOVER_DEG)
-    P_req = res["P"] * AIRCRAFT["n_rotors"] / 1000.0 / AIRCRAFT["drivetrain_efficiency"]
-    P_avail = power_available_kW(0.0)
-    power_calc_ok = P_req < P_avail
-    results.append(("Power required/available calc", "MTOW hover at sea level within power available",
-                     power_calc_ok, f"P_req={P_req:.1f} kW, P_avail={P_avail:.1f} kW"))
+    try:
+        theta0, res = _solve_for_thrust(
+            AIRCRAFT["gross_weight_kg"] * G / AIRCRAFT["n_rotors"],
+            0.0, 0.0, RPM_HOVER, COLLECTIVE_RANGE_HOVER_DEG
+        )
+        P_req = res["P"] * AIRCRAFT["n_rotors"] / 1000.0 / AIRCRAFT["drivetrain_efficiency"]
+        P_avail = power_available_kW(0.0)
+        power_calc_ok = P_req < P_avail
+        evidence_str = f"P_req={P_req:.1f} kW, P_avail={P_avail:.1f} kW"
+    except Exception as err:
+        power_calc_ok = False
+        evidence_str = f"Solver error: {err}"
+
+    results.append((
+        "Power required/available calc", "MTOW hover at sea level within power available",
+        power_calc_ok, evidence_str
+    ))
 
     # (8) failure-warning logic: identifies segment, time, and reason
     mp5 = MissionPlanner(gross_weight_kg=3800.0, fuel_kg=AIRCRAFT["fuel_capacity_kg"], dt_s=30.0)
     mp5.hover(duration_s=60.0, altitude_m=0.0)
-    warning_ok = (mp5.failed and mp5.failure.segment_label == "hover"
-                  and mp5.failure.time_s is not None and len(mp5.failure.reason) > 0)
-    results.append(("Failure-warning logic", "overweight hover flags segment+time+reason",
-                     warning_ok, f"'{mp5.failure.reason}'" if mp5.failed else "did not fail"))
+
+    seg_label = _get_fail_attr(mp5.failure, "segment_label", "")
+    time_s = _get_fail_attr(mp5.failure, "time_s", None)
+    reason = _get_fail_attr(mp5.failure, "reason", "")
+
+    warning_ok = (mp5.failed and seg_label == "hover" and time_s is not None and len(reason) > 0)
+    results.append((
+        "Failure-warning logic", "overweight hover flags segment+time+reason",
+        warning_ok, f"'{reason}'" if mp5.failed else "did not fail"
+    ))
 
     print("=== Task 9 / Sec 7.1 -- Implementation Verification ===")
-    with open(os.path.join(OUT_DIR, "task9_1_verification_table.csv"), "w") as f:
-        f.write("Verification_item,Test_case,Pass,Evidence\n")
+    csv_path = os.path.join(OUT_DIR, "task9_1_verification_table.csv")
+    with open(csv_path, "w", newline="") as f:
+        writer = csv.writer(f)
+        writer.writerow(["Verification_item", "Test_case", "Pass", "Evidence"])
         for item, test, ok, evidence in results:
             status = "PASS" if ok else "FAIL"
             print(f"[{status}] {item:<32} {test}\n         evidence: {evidence}")
-            f.write(f'"{item}","{test}",{status},"{evidence}"\n')
+            writer.writerow([item, test, status, evidence])
+
     n_fail = sum(1 for r in results if not r[2])
     print(f"\n{len(results)-n_fail}/{len(results)} verification checks passed.")
     return results
@@ -141,29 +197,39 @@ def fuel_burn_vs_gross_weight():
     gw_values = np.linspace(2000.0, 3200.0, 13)
     rates = []
     for gw in gw_values:
-        theta0, res = _solve_for_thrust(gw * G / AIRCRAFT["n_rotors"], 0.0, 0.0,
-                                         RPM_HOVER, COLLECTIVE_RANGE_HOVER_DEG)
-        if theta0 is None:
+        try:
+            theta0, res = _solve_for_thrust(
+                gw * G / AIRCRAFT["n_rotors"], 0.0, 0.0,
+                RPM_HOVER, COLLECTIVE_RANGE_HOVER_DEG
+            )
+            if theta0 is None:
+                rates.append(np.nan)
+                continue
+            P_shaft_kW = res["P"] * AIRCRAFT["n_rotors"] / 1000.0 / AIRCRAFT["drivetrain_efficiency"]
+            fuel_rate_kgph = AIRCRAFT["sfc_kg_per_kWh"] * P_shaft_kW
+            rates.append(fuel_rate_kgph)
+        except Exception:
             rates.append(np.nan)
-            continue
-        P_shaft_kW = res["P"] * AIRCRAFT["n_rotors"] / 1000.0 / AIRCRAFT["drivetrain_efficiency"]
-        fuel_rate_kgph = AIRCRAFT["sfc_kg_per_kWh"] * P_shaft_kW
-        rates.append(fuel_rate_kgph)
 
     plt.figure(figsize=(6.5, 4.5))
     plt.plot(gw_values, rates, "o-", color="tab:blue")
     plt.axvline(AIRCRAFT["gross_weight_kg"], color="k", ls="--", lw=1, label="design MTOW")
-    plt.xlabel("Gross weight [kg]"); plt.ylabel("Fuel-burn rate, hover, sea level [kg/hr]")
+    plt.xlabel("Gross weight [kg]")
+    plt.ylabel("Fuel-burn rate, hover, sea level [kg/hr]")
     plt.title("Task 9 / Sec 7.2 -- Hover fuel-burn rate vs gross weight")
-    plt.grid(alpha=0.3); plt.legend()
+    plt.grid(alpha=0.3)
+    plt.legend()
     plt.tight_layout()
     plt.savefig(os.path.join(FIG_DIR, "task9_2_fuel_burn_vs_gw.png"), dpi=160)
     plt.close()
 
-    with open(os.path.join(OUT_DIR, "task9_2_fuel_burn_vs_gw.csv"), "w") as f:
-        f.write("gross_weight_kg,fuel_burn_rate_kg_per_hr\n")
+    csv_path = os.path.join(OUT_DIR, "task9_2_fuel_burn_vs_gw.csv")
+    with open(csv_path, "w", newline="") as f:
+        writer = csv.writer(f)
+        writer.writerow(["gross_weight_kg", "fuel_burn_rate_kg_per_hr"])
         for gw, r in zip(gw_values, rates):
-            f.write(f"{gw:.1f},{r:.3f}\n")
+            writer.writerow([f"{gw:.1f}", f"{r:.3f}" if not np.isnan(r) else "NaN"])
+
     print(f"\nFuel-burn-rate plot written to {FIG_DIR}/task9_2_fuel_burn_vs_gw.png")
     return gw_values, rates
 
@@ -176,19 +242,24 @@ def hover_endurance_vs_takeoff_weight():
     max_search_s = 4.0 * 3600.0
     dt = 120.0
     rows = []
+
     for gw0 in takeoff_weights:
         mp = MissionPlanner(gross_weight_kg=gw0, fuel_kg=AIRCRAFT["fuel_capacity_kg"], dt_s=dt)
         mp.hover(duration_s=max_search_s, altitude_m=0.0)
         endurance_hr = mp.state.time_s / 3600.0
-        binding = mp.failure.reason if mp.failed else "reached search cap"
+
+        reason = _get_fail_attr(mp.failure, "reason", "reached search cap")
+        binding = reason if mp.failed else "reached search cap"
         rows.append((gw0, endurance_hr, binding))
         print(f"takeoff_weight={gw0:.0f} kg -> hover endurance = {endurance_hr:.2f} hr ({binding})")
 
     gw_arr = [r[0] for r in rows]
     end_arr = [r[1] for r in rows]
+
     plt.figure(figsize=(6.5, 4.5))
     plt.plot(gw_arr, end_arr, "o-", color="tab:red")
-    plt.xlabel("Takeoff weight [kg]"); plt.ylabel("Hover endurance [hr]")
+    plt.xlabel("Takeoff weight [kg]")
+    plt.ylabel("Hover endurance [hr]")
     plt.title(f"Task 9 / Sec 7.3 -- Hover endurance vs takeoff weight\n"
               f"(sea level, {AIRCRAFT['reserve_fuel_fraction']*100:.0f}% reserve-fuel policy applied)")
     plt.grid(alpha=0.3)
@@ -196,10 +267,13 @@ def hover_endurance_vs_takeoff_weight():
     plt.savefig(os.path.join(FIG_DIR, "task9_3_hover_endurance_vs_takeoff_weight.png"), dpi=160)
     plt.close()
 
-    with open(os.path.join(OUT_DIR, "task9_3_hover_endurance.csv"), "w") as f:
-        f.write("takeoff_weight_kg,endurance_hr,binding_constraint\n")
+    csv_path = os.path.join(OUT_DIR, "task9_3_hover_endurance.csv")
+    with open(csv_path, "w", newline="") as f:
+        writer = csv.writer(f)
+        writer.writerow(["takeoff_weight_kg", "endurance_hr", "binding_constraint"])
         for r in rows:
-            f.write(f"{r[0]:.1f},{r[1]:.3f},{r[2]}\n")
+            writer.writerow([f"{r[0]:.1f}", f"{r[1]:.3f}", r[2]])
+
     print(f"\nHover endurance plot written to {FIG_DIR}/task9_3_hover_endurance_vs_takeoff_weight.png")
     return rows
 
@@ -211,20 +285,27 @@ def cruise_range_vs_speed():
     speeds = [15.0, 18.0, 20.0, 22.0, 25.0]     # m/s, trim-feasible at MTOW
     dt = 600.0
     rows = []
+
     for V in speeds:
-        mp = MissionPlanner(gross_weight_kg=AIRCRAFT["gross_weight_kg"],
-                             fuel_kg=AIRCRAFT["fuel_capacity_kg"], dt_s=dt)
+        mp = MissionPlanner(
+            gross_weight_kg=AIRCRAFT["gross_weight_kg"],
+            fuel_kg=AIRCRAFT["fuel_capacity_kg"], dt_s=dt
+        )
         mp.cruise(distance_km=1100.0, altitude_m=3000.0, airspeed_ms=V)
         range_km = mp.state.distance_km
-        binding = mp.failure.reason if mp.failed else "reached target distance"
+
+        reason = _get_fail_attr(mp.failure, "reason", "reached target distance")
+        binding = reason if mp.failed else "reached target distance"
         rows.append((V, range_km, binding))
         print(f"V={V:.0f} m/s -> range = {range_km:.0f} km ({binding})")
 
     v_arr = [r[0] for r in rows]
     range_arr = [r[1] for r in rows]
+
     plt.figure(figsize=(6.5, 4.5))
     plt.plot(v_arr, range_arr, "o-", color="tab:green")
-    plt.xlabel("Cruise speed [m/s]"); plt.ylabel("Range [km]")
+    plt.xlabel("Cruise speed [m/s]")
+    plt.ylabel("Range [km]")
     plt.title(f"Task 9 / Sec 7.4 -- Cruise range vs cruise speed\n"
               f"(3000 m altitude, {AIRCRAFT['reserve_fuel_fraction']*100:.0f}% reserve-fuel policy, "
               f"L/D={CRUISE_L_OVER_D})")
@@ -233,10 +314,13 @@ def cruise_range_vs_speed():
     plt.savefig(os.path.join(FIG_DIR, "task9_4_cruise_range_vs_speed.png"), dpi=160)
     plt.close()
 
-    with open(os.path.join(OUT_DIR, "task9_4_cruise_range.csv"), "w") as f:
-        f.write("cruise_speed_ms,range_km,binding_constraint\n")
+    csv_path = os.path.join(OUT_DIR, "task9_4_cruise_range.csv")
+    with open(csv_path, "w", newline="") as f:
+        writer = csv.writer(f)
+        writer.writerow(["cruise_speed_ms", "range_km", "binding_constraint"])
         for r in rows:
-            f.write(f"{r[0]:.1f},{r[1]:.1f},{r[2]}\n")
+            writer.writerow([f"{r[0]:.1f}", f"{r[1]:.1f}", r[2]])
+
     print(f"\nCruise range plot written to {FIG_DIR}/task9_4_cruise_range_vs_speed.png")
     return rows
 
@@ -246,4 +330,5 @@ if __name__ == "__main__":
     fuel_burn_vs_gross_weight()
     hover_endurance_vs_takeoff_weight()
     cruise_range_vs_speed()
-    print(f"\nAll figures in ./{FIG_DIR}/task9_*.png ; all tables in ./{OUT_DIR}/task9_*.csv")
+    print(f"\nAll figures written to ./{FIG_DIR}/task9_*.png")
+    print(f"All outputs written to ./{OUT_DIR}/task9_*.csv")

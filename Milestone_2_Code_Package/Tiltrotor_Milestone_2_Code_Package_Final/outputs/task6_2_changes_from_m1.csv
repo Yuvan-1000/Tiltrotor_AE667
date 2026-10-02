@@ -1,0 +1,6 @@
+Change,M1 baseline,M2 value,Motivating issue,Expected benefit
+Rotor flow model,Axisymmetric axial BEMT,Azimuth-resolved edgewise BEMT,M2 forward-flight requirement,Advancing/retreating loading
+Nacelle state,End states only,Continuous 0–90°,M2 conversion requirement,Conversion corridor
+Rotor-to-body loads,Rotor thrust/torque only,3-axis force + moment + r×F about CG,Aircraft trim requirement,Full aircraft equilibrium
+Airframe aero,Cruise L/D proxy 8.5,Explicit wing + tail + fuselage/nacelle drag,Transition trim,Lift sharing and moments
+Mass source,Narrative/code could drift,Single configuration: 1950+550+500=3000 kg,M1 feedback,Reproducibility

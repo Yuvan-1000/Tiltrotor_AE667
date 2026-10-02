@@ -1,0 +1,1 @@
+The production grid is 80 radial × 72 azimuth stations. The 96-azimuth representative case is used for the contour/limit plots. The sensitivity plots show that changes become small at the adopted production resolution; the plotted convergence data, not a verbal assertion, are the basis for the chosen grid.
